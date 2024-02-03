@@ -15,9 +15,10 @@ bottest = ["lib/bottest"]
 lib = { path = "../lib", package = "swissrpg-lib" }
 aho-corasick = "1.0"
 askama = "0.12"
-askama_axum = "0.3"
+askama_axum = "0.4"
 async-stripe = { version = "0.29", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
-axum = { version = "0.6", features=["headers"] }
+axum = "0.7"
+axum-extra = { version="0.9", default-features = false, features = ["typed-header"] }
 assert-impl = "0.1"
 base64 = "0.21"
 command_macro = { path = "../command_macro", package = "swissrpg-command-macro" }
@@ -27,7 +28,7 @@ cookie = { version = "0.18", features = ["private"] }
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
-hyper = "0.14"
+hyper = "1.1"
 lazy_static = "1.4"
 num-traits = "0.2"
 oauth2 = "4.0"
@@ -41,4 +42,4 @@ serenity = { version = "0.12", default-features = false, features = ["cache", "c
 simple-error = "0.3"
 sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
-tower-http = { version = "0.4", features = ["fs"] }
+tower-http = { version = "0.5", features = ["fs"] }

@@ -2,14 +2,15 @@ use std::{borrow::Cow, sync::Arc};
 
 use askama::Template;
 use axum::{
-    extract::{Extension, Form, Path, TypedHeader},
-    headers::HeaderMapExt,
+    extract::{Extension, Form, Path},
     http::{header::SET_COOKIE, HeaderValue, Request},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Router,
 };
+use axum_extra::headers::HeaderMapExt;
+use axum_extra::TypedHeader;
 use base64::{engine::general_purpose, Engine as _};
 use cookie::{Cookie, CookieJar, Key, SameSite};
 use lib::db::MemberId;
@@ -63,6 +64,7 @@ struct AuthTemplate<'a> {
     auth_id: &'a str,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AuthenticatedMember(pub MemberId);
 
 async fn auth_handler_get(
@@ -202,7 +204,7 @@ impl<T: IntoResponse> IntoResponse for RemoveAuthCookie<T> {
 }
 
 async fn logout_handler(
-    TypedHeader(cookie_header): TypedHeader<axum::headers::Cookie>,
+    TypedHeader(cookie_header): TypedHeader<axum_extra::headers::Cookie>,
     Extension(state): Extension<Arc<State>>,
 ) -> Result<impl IntoResponse, WebError> {
     // Check if there is an auth cookie with a valid session ID
@@ -229,7 +231,7 @@ async fn logout_handler(
     Ok(RemoveAuthCookie(Redirect::to("/")))
 }
 
-pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, WebError> {
+pub async fn auth(mut req: Request<axum::body::Body>, next: Next) -> Result<Response, WebError> {
     let state: &Arc<State> = match req.extensions().get() {
         Some(state) => state,
         None => return Err(SimpleError::new("State is not set").into()),
@@ -238,7 +240,7 @@ pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, Web
     // It looks like typed_get() (and the TypedHeader extractor) will merge all
     // occurences of a specific header, so this should be sufficient to handle
     // multiple "Cookie" headers (which is allowed by HTTP2)
-    let cookie_header: Option<axum::headers::Cookie> = req.headers().typed_get();
+    let cookie_header: Option<axum_extra::headers::Cookie> = req.headers().typed_get();
     let mut jar = CookieJar::new();
     if let Some(cookie_header) = cookie_header {
         for (cookie_name, cookie_value) in cookie_header.iter() {

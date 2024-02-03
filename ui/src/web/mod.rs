@@ -9,7 +9,7 @@ use std::{backtrace::Backtrace, borrow::Cow};
 
 use askama::Template;
 use axum::{
-    body,
+    body::Body,
     http::{status::StatusCode, uri::InvalidUri},
     response::{IntoResponse, Response},
 };
@@ -62,18 +62,13 @@ pub enum WebError {
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
         let body = match self {
-            WebError::Lib(err) => body::boxed(body::Full::from(format!(
-                "Internal Server Error (Lib):\n{:#?}",
-                err
-            ))),
-            WebError::OAuthError(err) => body::boxed(body::Full::from(format!(
-                "Internal Server Error (OAuth):\n{:#?}",
-                err
-            ))),
-            WebError::Other(err) => body::boxed(body::Full::from(format!(
-                "Internal Server Error (Other):\n{:#?}",
-                err
-            ))),
+            WebError::Lib(err) => Body::from(format!("Internal Server Error (Lib):\n{:#?}", err)),
+            WebError::OAuthError(err) => {
+                Body::from(format!("Internal Server Error (OAuth):\n{:#?}", err))
+            }
+            WebError::Other(err) => {
+                Body::from(format!("Internal Server Error (Other):\n{:#?}", err))
+            }
             WebError::Unauthorized(message) => {
                 let template = MessageTemplate {
                     title: Cow::Borrowed("Unauthorized"),

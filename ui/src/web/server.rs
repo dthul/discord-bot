@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 use futures_util::lock::Mutex;
+use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
 use super::{api, auth, linking, schedule_session, stripe_webhook_endpoint};
@@ -78,8 +79,10 @@ pub fn create_server(
         .merge(static_route)
         .layer(Extension(state));
     async move {
-        if let Err(err) = axum::Server::bind(&addr)
-            .serve(router.into_make_service())
+        let listener = TcpListener::bind(&addr)
+            .await
+            .expect("Could not bind to address");
+        if let Err(err) = axum::serve(listener, router)
             .with_graceful_shutdown(shutdown_signal)
             .await
         {

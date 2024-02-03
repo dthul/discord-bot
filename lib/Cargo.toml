@@ -24,7 +24,7 @@ futures = "0.3"
 futures-util = "0.3"
 geo = { version = "0.27", default-features = false }
 graphql_client = "0.13"
-hyper = "0.14"
+hyper = "1.1"
 iso8601 = "0.6"
 itertools = "0.12"
 lazy_static = "1.4"

@@ -3,13 +3,13 @@ use std::{borrow::Cow, sync::Arc};
 use askama::Template;
 use askama_axum::IntoResponse;
 use axum::{
-    body,
+    body::Body,
     extract::{Extension, OriginalUri, Path, Query},
-    headers::HeaderMap,
     response::Response,
     routing::get,
     Router,
 };
+use axum_extra::headers::HeaderMap;
 use cookie::Cookie;
 use lib::{DefaultStr, LinkingAction, LinkingMemberDiscord, LinkingMemberMeetup, LinkingResult};
 use oauth2::{AuthorizationCode, CsrfToken, RedirectUrl, Scope, TokenResponse};
@@ -254,7 +254,7 @@ async fn link_handler(
     let html_body = linking_template.render()?;
     let response = Response::builder()
         .header(hyper::header::SET_COOKIE, csrf_cookie.to_string())
-        .body(body::boxed(body::Full::from(html_body)))?;
+        .body(Body::from(html_body))?;
     Ok(response)
 }
 
