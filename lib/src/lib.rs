@@ -38,6 +38,7 @@ pub struct ChannelRoles {
     pub host: Option<RoleId>,
 }
 
+#[tracing::instrument(skip(db_connection), level = "debug")]
 pub async fn get_event_series_roles(
     event_series_id: db::EventSeriesId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -60,6 +61,7 @@ pub async fn get_event_series_roles(
     }
 }
 
+#[tracing::instrument(skip(db_connection), level = "debug")]
 pub async fn get_channel_roles(
     channel_id: ChannelId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -78,6 +80,7 @@ pub async fn get_channel_roles(
     }
 }
 
+#[tracing::instrument(skip(db_connection), level = "debug")]
 pub async fn get_series_text_channel(
     event_series_id: db::EventSeriesId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -93,6 +96,7 @@ pub async fn get_series_text_channel(
         .map(|id| ChannelId::new(id as u64)))
 }
 
+#[tracing::instrument(skip(db_connection), level = "debug")]
 pub async fn get_series_voice_channel(
     event_series_id: db::EventSeriesId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -108,6 +112,7 @@ pub async fn get_series_voice_channel(
         .map(|id| ChannelId::new(id as u64)))
 }
 
+#[tracing::instrument(skip(db_connection), level = "debug")]
 pub async fn get_channel_voice_channel(
     channel_id: ChannelId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -123,6 +128,7 @@ pub async fn get_channel_voice_channel(
         .map(|id| ChannelId::new(id as u64)))
 }
 
+#[tracing::instrument(skip(db_connection), level = "debug")]
 pub async fn get_channel_series(
     channel_id: ChannelId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -136,6 +142,7 @@ pub async fn get_channel_series(
     Ok(series_id.map(|id| EventSeriesId(id)))
 }
 
+#[tracing::instrument(skip(db_connection), level = "trace")]
 pub async fn is_game_channel(
     channel_id: ChannelId,
     db_connection: &mut sqlx::PgConnection,
@@ -177,6 +184,7 @@ pub enum LinkingResult {
     },
 }
 
+#[tracing::instrument(skip(db_connection))]
 pub async fn link_discord_meetup(
     discord_id: UserId,
     meetup_id: u64,
@@ -364,6 +372,7 @@ pub enum UnlinkingResult {
     NotLinked,
 }
 
+#[tracing::instrument(skip(db_connection))]
 pub async fn unlink_meetup(
     discord_id: UserId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,

@@ -10,6 +10,7 @@ pub enum EndAdventureResult {
     NewlyMarkedForDeletion(DateTime<chrono::Utc>),
 }
 
+#[tracing::instrument(skip(db_connection))]
 pub async fn end_adventure(
     channel_id: ChannelId,
     db_connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,

@@ -1,5 +1,6 @@
 use unicode_segmentation::UnicodeSegmentation;
 
+#[tracing::instrument(skip(meetup_client, hook))]
 pub async fn clone_event<'a>(
     urlname: &'a str,
     event_id: &'a str,
@@ -63,6 +64,7 @@ pub async fn clone_event<'a>(
     return Ok(new_event);
 }
 
+#[tracing::instrument(skip(meetup_api))]
 pub async fn get_group_memberships(
     meetup_api: super::newapi::AsyncClient,
 ) -> Result<Vec<super::newapi::GroupMembership>, super::newapi::Error> {

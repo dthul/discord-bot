@@ -39,5 +39,6 @@ serenity = { version = "0.12", default-features = false, features = ["cache", "c
 simple-error = "0.3"
 sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
+tracing = "0.1"
 unicode-segmentation = "1.7"
 url = "2.1"

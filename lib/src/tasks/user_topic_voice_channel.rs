@@ -1,6 +1,7 @@
 use redis::AsyncCommands;
 use serenity::{builder::EditChannel, model::channel::Channel};
 use std::time::Duration;
+use tracing::{error, info_span, Instrument};
 
 pub const DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME: &str = "Your topic (ask Hyperion)";
 
@@ -21,21 +22,23 @@ pub async fn reset_user_topic_voice_channel_task(
         let mut redis_connection = match redis_client.get_async_connection().await {
             Ok(con) => con,
             Err(err) => {
-                eprintln!(
+                error!(
                     "User topic voice channel reset task: Could not acquire Redis connection:\n{:#?}",
                     err
                 );
                 continue;
             }
         };
-        if let Err(err) =
-            reset_user_topic_voice_channel(&mut redis_connection, &mut discord_api).await
+        if let Err(err) = reset_user_topic_voice_channel(&mut redis_connection, &mut discord_api)
+            .instrument(info_span!("reset_user_topic_voice_channel_task"))
+            .await
         {
-            eprintln!("User topic voice channel reset task failed:\n{:#?}", err);
+            error!("User topic voice channel reset task failed:\n{:#?}", err);
         }
     }
 }
 
+#[tracing::instrument(skip(redis_connection, discord_api))]
 async fn reset_user_topic_voice_channel(
     redis_connection: &mut redis::aio::Connection,
     discord_api: &crate::discord::CacheAndHttp,
@@ -92,7 +95,7 @@ async fn reset_user_topic_voice_channel(
         EditChannel::new().name(DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME),
     );
     match tokio::time::timeout(Duration::from_secs(10), rename_channel_future).await {
-        Err(_) => eprintln!("User topic voice channel reset: channel edit request timed out"),
+        Err(_) => error!("User topic voice channel reset: channel edit request timed out"),
         Ok(e @ Err(_)) => e?,
         _ => (),
     }

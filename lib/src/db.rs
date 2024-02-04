@@ -73,6 +73,7 @@ pub struct DiscordChannelId(pub u64);
 #[sqlx(transparent)]
 pub struct MemberId(pub i32);
 
+#[derive(Debug)]
 pub struct MeetupEvent {
     pub id: MeetupEventId,
     pub meetup_id: String,
@@ -80,6 +81,7 @@ pub struct MeetupEvent {
     pub urlname: String,
 }
 
+#[derive(Debug)]
 pub struct Event {
     pub id: EventId,
     pub title: String,
@@ -103,6 +105,7 @@ struct EventQueryHelper {
     meetup_event_urlname: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct Member {
     pub id: MemberId,
     pub meetup_id: Option<u64>,
@@ -110,6 +113,7 @@ pub struct Member {
     pub discord_nick: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct MemberWithMeetup {
     pub id: MemberId,
     pub meetup_id: u64,
@@ -117,6 +121,7 @@ pub struct MemberWithMeetup {
     pub discord_nick: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct MemberWithDiscord {
     pub id: MemberId,
     pub meetup_id: Option<u64>,
@@ -192,6 +197,7 @@ impl From<MemberQueryHelper> for Member {
     }
 }
 
+#[tracing::instrument(skip(db_connection))]
 pub async fn get_next_event_in_series(
     db_connection: &sqlx::PgPool,
     series_id: EventSeriesId,
@@ -211,6 +217,7 @@ pub async fn get_next_event_in_series(
     Ok(next_event.map(Into::into))
 }
 
+#[tracing::instrument(skip(db_connection))]
 pub async fn get_last_event_in_series(
     db_connection: &sqlx::PgPool,
     series_id: EventSeriesId,
@@ -231,6 +238,7 @@ pub async fn get_last_event_in_series(
 }
 
 // Queries all events belonging to the specified series from latest to oldest
+#[tracing::instrument(skip(db_connection))]
 pub async fn get_events_for_series(
     db_connection: &sqlx::PgPool,
     series_id: EventSeriesId,
@@ -251,6 +259,7 @@ pub async fn get_events_for_series(
 }
 
 // Queries upcoming events belonging to the specified series from closest in time to furthest in the future
+#[tracing::instrument(skip(db_connection))]
 pub async fn get_upcoming_events_for_series(
     db_connection: &sqlx::PgPool,
     series_id: EventSeriesId,
@@ -270,6 +279,7 @@ pub async fn get_upcoming_events_for_series(
     Ok(events)
 }
 
+#[tracing::instrument(skip(tx))]
 pub async fn get_or_create_member_for_meetup_id(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     meetup_id: u64,
@@ -296,6 +306,7 @@ pub async fn get_or_create_member_for_meetup_id(
     }
 }
 
+#[tracing::instrument(skip(tx))]
 pub async fn get_or_create_member_for_discord_id(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     discord_id: UserId,
@@ -322,6 +333,7 @@ pub async fn get_or_create_member_for_discord_id(
     }
 }
 
+#[tracing::instrument(skip(db_connection))]
 // Return a list of members attending the specified events.
 // If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
 pub async fn get_events_participants(
@@ -359,6 +371,7 @@ pub async fn get_events_participants(
 
 // Return a list of members attending the specified Meetup events.
 // If hosts is `false` returns all guests, if `hosts` is true, returns all hosts.
+#[tracing::instrument(skip(db_connection))]
 pub async fn get_meetup_events_participants(
     meetup_event_ids: &[String],
     hosts: bool,
@@ -396,6 +409,7 @@ pub async fn get_meetup_events_participants(
 // Try to translate Meetup user IDs to Members. Returns mappings from
 // the Meetup ID to a Member or None if the user is unknown. The order of
 // the mapping is the same as the input order.
+#[tracing::instrument(skip(db_connection))]
 pub async fn meetup_ids_to_members(
     meetup_user_ids: &[u64],
     db_connection: &sqlx::PgPool,
@@ -427,6 +441,7 @@ pub async fn meetup_ids_to_members(
 // Try to translate Discord user IDs to Members. Returns mappings from
 // the Discord ID to a Member or None if the user is unknown. The order of
 // the mapping is the same as the input order.
+#[tracing::instrument(skip(db_connection))]
 pub async fn discord_ids_to_members(
     discord_user_ids: &[UserId],
     db_connection: &sqlx::PgPool,

@@ -9,6 +9,7 @@ use serenity::{
     http::CacheHttp,
     model::id::{RoleId, UserId},
 };
+use tracing::{error, info, info_span, Instrument};
 
 pub const CHAMPION_PRODUCT_PATTERN: &'static str =
     r"(?i).*(Novice|Apprentice|Adept|Master|Legendary).*";
@@ -52,18 +53,21 @@ pub async fn stripe_subscriptions_refresh_task(
     loop {
         // Wait for the next interval tick
         interval_timer.tick().await;
-        println!("Refreshing Stripe subscription information");
+        info!("Refreshing Stripe subscription information");
         let join_handle = {
             let discord_api = discord_api.clone();
             let stripe_client = stripe_client.clone();
-            tokio::spawn(async move { update_roles(&discord_api, &stripe_client).await })
+            tokio::spawn(
+                async move { update_roles(&discord_api, &stripe_client).await }
+                    .instrument(info_span!("stripe_subscriptions_refresh_task")),
+            )
         };
         match join_handle.await {
             Err(err) => {
-                eprintln!("Stripe subscription update task failed:\n{:#?}", err);
+                error!("Stripe subscription update task failed:\n{:#?}", err);
             }
             Ok(Err(err)) => {
-                eprintln!("Stripe subscription update task failed:\n{:#?}", err);
+                error!("Stripe subscription update task failed:\n{:#?}", err);
             }
             Ok(Ok(())) => {
                 // Nothing to do
@@ -72,6 +76,7 @@ pub async fn stripe_subscriptions_refresh_task(
     }
 }
 
+#[tracing::instrument(skip(discord_api, stripe_client))]
 pub async fn update_roles(
     discord_api: &crate::discord::CacheAndHttp,
     stripe_client: &stripe::Client,
@@ -88,7 +93,7 @@ pub async fn update_roles(
         {
             Ok(customer_product) => customer_product,
             Err(err) => {
-                eprintln!(
+                error!(
                     "Error in update_roles get_customer_and_product:\n{:#?}",
                     err
                 );
@@ -99,7 +104,7 @@ pub async fn update_roles(
             match ensure_customer_has_discord_id(&customer, stripe_client, discord_api).await {
                 Ok(discord_id) => discord_id,
                 Err(err) => {
-                    eprintln!(
+                    error!(
                         "Error in update_roles ensure_customer_has_discord_id:\n{:#?}",
                         err
                     );
@@ -122,7 +127,7 @@ pub async fn update_roles(
                 new_insiders.push(discord_id);
             }
         } else {
-            eprintln!(
+            error!(
                 "Could not find Discord ID for Stripe customer {} ({:?})",
                 customer.id, customer.email
             );
@@ -178,7 +183,7 @@ pub async fn update_roles(
                 )
                 .await
                 {
-                    eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
+                    error!("Error in update_roles add_member_role:\n{:#?}", err);
                 }
             }
             if current_champions.contains(new_champion) {
@@ -191,7 +196,7 @@ pub async fn update_roles(
                 )
                 .await
                 {
-                    eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+                    error!("Error in update_roles remove_member_role:\n{:#?}", err);
                 }
             }
         } else {
@@ -206,7 +211,7 @@ pub async fn update_roles(
                 )
                 .await
                 {
-                    eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
+                    error!("Error in update_roles add_member_role:\n{:#?}", err);
                 }
             }
             if current_gm_champions.contains(new_champion) {
@@ -219,7 +224,7 @@ pub async fn update_roles(
                 )
                 .await
                 {
-                    eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+                    error!("Error in update_roles remove_member_role:\n{:#?}", err);
                 }
             }
         }
@@ -235,7 +240,7 @@ pub async fn update_roles(
             )
             .await
             {
-                eprintln!("Error in update_roles add_member_role:\n{:#?}", err);
+                error!("Error in update_roles add_member_role:\n{:#?}", err);
             }
         }
     }
@@ -250,7 +255,7 @@ pub async fn update_roles(
             )
             .await
             {
-                eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+                error!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
         }
     }
@@ -267,7 +272,7 @@ pub async fn update_roles(
             )
             .await
             {
-                eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+                error!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
         }
     }
@@ -282,13 +287,14 @@ pub async fn update_roles(
             )
             .await
             {
-                eprintln!("Error in update_roles remove_member_role:\n{:#?}", err);
+                error!("Error in update_roles remove_member_role:\n{:#?}", err);
             }
         }
     }
     Ok(())
 }
 
+#[tracing::instrument(skip(client))]
 pub async fn get_customer_and_product(
     client: &stripe::Client,
     subscription: &stripe::Subscription,
@@ -324,6 +330,7 @@ pub async fn get_customer_and_product(
     Ok((customer, product))
 }
 
+#[tracing::instrument(skip(customer, client, discord_api), fields(customer.id = %customer.id))]
 async fn ensure_customer_has_discord_id(
     customer: &stripe::Customer,
     client: &stripe::Client,
@@ -353,7 +360,7 @@ async fn ensure_customer_has_discord_id(
         let discord_id = match discord_username_to_id(discord_api, discord_username).await? {
             Some(id) => id,
             None => {
-                eprintln!(
+                error!(
                     "Could not find Discord ID for username `{}`",
                     discord_username
                 );
@@ -377,7 +384,7 @@ async fn ensure_customer_has_discord_id(
         )
         .await
         {
-            eprintln!(
+            error!(
                 "Could not store the Discord user ID in Stripe customer metadata.\nStripe \
                  customer: {}\nError:\n{:#?}",
                 customer.id, err
@@ -388,6 +395,7 @@ async fn ensure_customer_has_discord_id(
 }
 
 // TODO: move to discord utils
+#[tracing::instrument(skip(discord_api))]
 pub async fn discord_username_to_id(
     discord_api: &crate::discord::CacheAndHttp,
     username: &str,
@@ -407,11 +415,12 @@ pub async fn discord_username_to_id(
             return Ok(Some(member.user.id));
         }
     }
-    eprintln!("Could not find a Discord ID for username {}", username);
+    error!("Could not find a Discord ID for username {}", username);
     Ok(None)
 }
 
 // TODO: move to discord utils
+#[tracing::instrument(skip(discord_api))]
 pub async fn add_member_role(
     discord_api: &crate::discord::CacheAndHttp,
     user_id: UserId,
@@ -429,11 +438,11 @@ pub async fn add_member_role(
         .await
     {
         Ok(_) => {
-            println!("Assigned user {} to role {}", user_id, role_id);
+            info!("Assigned user {} to role {}", user_id, role_id);
             Ok(())
         }
         Err(err) => {
-            eprintln!(
+            error!(
                 "Could not assign user {} to role {}:\n{:#?}",
                 user_id, role_id, err
             );
@@ -443,6 +452,7 @@ pub async fn add_member_role(
 }
 
 // TODO: move to discord utils
+#[tracing::instrument(skip(discord_api))]
 async fn remove_member_role(
     discord_api: &crate::discord::CacheAndHttp,
     user_id: UserId,
@@ -460,11 +470,11 @@ async fn remove_member_role(
         .await
     {
         Ok(_) => {
-            println!("Removed role {} from user {}", role_id, user_id);
+            info!("Removed role {} from user {}", role_id, user_id);
             Ok(())
         }
         Err(err) => {
-            eprintln!(
+            error!(
                 "Could not remove role {} from user {}:\n{:#?}",
                 role_id, user_id, err
             );

@@ -3,6 +3,7 @@ use crate::db;
 use serenity::model::id::ChannelId;
 // use unicode_segmentation::UnicodeSegmentation;
 
+#[tracing::instrument(skip(db_connection, discord_cache_http))]
 pub async fn say_in_event_series_channel(
     series_id: db::EventSeriesId,
     message: &str,
@@ -21,6 +22,7 @@ pub async fn say_in_event_series_channel(
     Ok(())
 }
 
+#[tracing::instrument(skip(db_connection, discord_cache_http))]
 pub async fn say_in_event_channel(
     event_id: db::EventId,
     message: &str,
@@ -42,6 +44,7 @@ pub async fn say_in_event_channel(
     Ok(())
 }
 
+#[tracing::instrument(skip(discord_cache_http))]
 pub async fn say_in_bot_alerts_channel(
     message: &str,
     discord_cache_http: &super::CacheAndHttp,

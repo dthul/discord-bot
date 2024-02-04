@@ -3,11 +3,13 @@ use std::sync::Arc;
 use futures_util::lock::Mutex;
 use serenity::{all::Mentionable, builder::CreateMessage, model::id::RoleId};
 use simple_error::SimpleError;
+use tracing::{debug, error, info};
 
 use super::free_spots::EventCollector;
 use crate::{db, DefaultStr};
 
 impl EventCollector {
+    #[tracing::instrument(skip_all)]
     pub async fn assign_roles(
         &self,
         meetup_client: Arc<Mutex<Option<Arc<super::meetup::newapi::AsyncClient>>>>,
@@ -22,7 +24,7 @@ impl EventCollector {
             }
             // The Mutex guard will be dropped here
         };
-        println!("Role shortcode: Checking {} events", self.events.len());
+        info!("Role shortcode: Checking {} events", self.events.len());
         for event in &self.events {
             // Check whether this event uses the role shortcode
             let role_captures =
@@ -33,7 +35,7 @@ impl EventCollector {
                     if let Some(role_id) = captures.name("role_id") {
                         match role_id.as_str().parse::<u64>() {
                             Ok(id) => roles.push(RoleId::new(id)),
-                            _ => eprintln!(
+                            _ => error!(
                                 "Meetup event {} specifies invalid role id {}",
                                 event.id,
                                 role_id.as_str()
@@ -45,10 +47,10 @@ impl EventCollector {
             };
             let title = event.title.unwrap_or_str("No title");
             if roles.is_empty() {
-                println!("Role shortcode: skipping {}", title);
+                debug!("Role shortcode: skipping {}", title);
                 continue;
             }
-            println!("Role shortcode: event {} has role(s)", title);
+            debug!("Role shortcode: event {} has role(s)", title);
             // Some events (games) might already have their RSVPs stored in the database.
             // For the others we query Meetup.
             let db_event_id = sqlx::query!(
@@ -61,7 +63,7 @@ impl EventCollector {
             // Meetup user IDs
             let rsvps: Vec<db::Member> = if let Some(db_event_id) = db_event_id {
                 // Get the RSVPs from the database
-                println!("Role shortcode: event {} has RSVPs in the database", title);
+                debug!("Role shortcode: event {} has RSVPs in the database", title);
                 let hosts =
                     db::get_events_participants(&[db_event_id], true, db_connection).await?;
                 let participants =
@@ -69,14 +71,14 @@ impl EventCollector {
                 hosts.into_iter().chain(participants.into_iter()).collect()
             } else {
                 // Get the RSVPs from Meetup
-                println!(
+                info!(
                     "Role shortcode: querying RSVPs for event {} from Meetup",
                     title
                 );
                 let meetup_participant_ids: Vec<_> =
                     match meetup_client.get_tickets_vec(event.id.0.clone()).await {
                         Err(err) => {
-                            eprintln!("Error in assign_roles::get_rsvps:\n{:#?}", err);
+                            error!("Error in assign_roles::get_rsvps:\n{:#?}", err);
                             continue;
                         }
                         Ok(tickets) => tickets.iter().map(|ticket| ticket.user.id.0).collect(),
@@ -103,7 +105,7 @@ impl EventCollector {
                     .await
                 {
                     Err(err) => {
-                        eprintln!("Could not find Discord discord_member:\n{:#?}", err);
+                        error!("Could not find Discord discord_member:\n{:#?}", err);
                         continue;
                     }
                     Ok(discord_member) => discord_member,

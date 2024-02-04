@@ -10,6 +10,7 @@ use serenity::{
     },
     prelude::*,
 };
+use tracing::error;
 
 mod add_user;
 // mod clone_event;
@@ -371,7 +372,7 @@ pub(crate) fn prepare_commands(
             }
             (res1, res2) => {
                 let err = res1.err().unwrap_or_else(|| res2.unwrap_err());
-                eprintln!(
+                error!(
                     "Could not compile command regex \"{}\":\n{:#?}",
                     command_partial_regex, err
                 )

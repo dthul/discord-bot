@@ -1,3 +1,4 @@
+#[tracing::instrument(skip(client))]
 pub async fn list_active_subscriptions(
     client: &stripe::Client,
 ) -> Result<Vec<stripe::Subscription>, crate::meetup::Error> {

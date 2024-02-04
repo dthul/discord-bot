@@ -16,6 +16,7 @@ pub fn closure_type_helper<
 }
 
 // A direct translation of redis::transaction for the async case
+#[tracing::instrument(skip_all, level = "trace")]
 pub async fn async_redis_transaction<
     K: redis::ToRedisArgs,
     T: redis::FromRedisValue + Send + 'static,
@@ -52,6 +53,7 @@ pub struct Lock<'a> {
 }
 
 // https://redislabs.com/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-2-distributed-locking/6-2-5-locks-with-timeouts/
+// TODO: remove(?)
 impl<'a> Lock<'a> {
     pub fn acquire_with_timeout(
         redis_connection: &'a mut redis::Connection,
@@ -111,6 +113,7 @@ impl<'a> Drop for Lock<'a> {
     }
 }
 
+// TODO: remove(?)
 pub struct AsyncLock<'a> {
     redis_connection: &'a mut redis::aio::Connection,
     lockname: &'a str,

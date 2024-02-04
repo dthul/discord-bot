@@ -2,6 +2,7 @@ use crate::{db, meetup::oauth2::TokenType};
 use chrono::{Datelike, Timelike};
 use futures_util::lock::Mutex;
 use std::sync::Arc;
+use tracing::{error, info, info_span, Instrument};
 
 // Refreshes the authorization token
 pub async fn organizer_token_refresh_task(
@@ -24,7 +25,7 @@ pub async fn organizer_token_refresh_task(
         chrono::Utc::now()
     };
     loop {
-        println!(
+        info!(
             "Next organizer token refresh @ {}",
             next_refresh_time.to_rfc3339()
         );
@@ -35,7 +36,7 @@ pub async fn organizer_token_refresh_task(
             ))
             .await;
         }
-        println!("Starting organizer token refresh");
+        info!("Starting organizer token refresh");
         // Try to refresh the organizer oauth tokens.
         // We spawn this onto a new task, such that when this long-lived refresh task
         // is aborted, the short-lived refresh task still has a chance to run to completion.
@@ -43,25 +44,29 @@ pub async fn organizer_token_refresh_task(
             let oauth2_consumer = oauth2_consumer.clone();
             let pool = pool.clone();
             let async_meetup_client = async_meetup_client.clone();
-            tokio::spawn(async move {
-                organizer_token_refresh_task_impl(oauth2_consumer, pool, async_meetup_client).await
-            })
+            tokio::spawn(
+                async move {
+                    organizer_token_refresh_task_impl(oauth2_consumer, pool, async_meetup_client)
+                        .await
+                }
+                .instrument(info_span!("organizer_token_refresh_task")),
+            )
         };
         match join_handle.await {
             Err(err) => {
-                eprintln!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
+                error!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
                 // Try to refresh again in an hour
                 next_refresh_time = chrono::Utc::now() + chrono::Duration::hours(1);
             }
             Ok(Err(err)) => {
-                eprintln!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
+                error!("Could not refresh the organizer's oauth2 token:\n{}\n", err);
                 // Try to refresh again in an hour
                 next_refresh_time = chrono::Utc::now() + chrono::Duration::hours(1);
             }
             Ok(Ok(())) => {
                 // Refresh the access token in two days from now
                 next_refresh_time = chrono::Utc::now() + chrono::Duration::days(2);
-                println!(
+                info!(
                     "Refreshed the organizer's Meetup OAuth token. Next refresh @ {}",
                     next_refresh_time.to_rfc3339()
                 );
@@ -78,6 +83,7 @@ pub async fn organizer_token_refresh_task(
     }
 }
 
+#[tracing::instrument(skip(oauth2_consumer, pool, async_meetup_client))]
 async fn organizer_token_refresh_task_impl(
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
     pool: sqlx::PgPool,
@@ -118,7 +124,7 @@ pub async fn users_token_refresh_task(
                 .await?;
             // For each user, check if there is a refresh token.
             // If so, check whether refresh is due.
-            println!(
+            info!(
                 "Users token refresh task: Checking {} users",
                 member_ids.len()
             );
@@ -129,16 +135,19 @@ pub async fn users_token_refresh_task(
                 let join_handle = {
                     let oauth2_consumer = oauth2_consumer.clone();
                     let pool = pool.clone();
-                    tokio::spawn(async move {
-                        user_token_refresh_task_impl(member_id, oauth2_consumer, pool).await
-                    })
+                    tokio::spawn(
+                        async move {
+                            user_token_refresh_task_impl(member_id, oauth2_consumer, pool).await
+                        }
+                        .instrument(info_span!("users_token_refresh_task")),
+                    )
                 };
                 match join_handle.await {
                     Err(err) => {
-                        eprintln!("Could not refresh the user's oauth2 token:\n{:#?}\n", err);
+                        error!("Could not refresh the user's oauth2 token:\n{:#?}\n", err);
                     }
                     Ok(Err(err)) => {
-                        eprintln!("Could not refresh the user's oauth2 token:\n{:#?}\n", err);
+                        error!("Could not refresh the user's oauth2 token:\n{:#?}\n", err);
                     }
                     Ok(Ok(())) => {
                         // Nothing to do
@@ -151,11 +160,12 @@ pub async fn users_token_refresh_task(
         })()
         .await;
         if let Err(err) = res {
-            eprintln!("Error in users refresh token task:\n{:#?}", err);
+            error!("Error in users refresh token task:\n{:#?}", err);
         }
     }
 }
 
+#[tracing::instrument(skip(oauth2_consumer, pool))]
 async fn user_token_refresh_task_impl(
     member_id: db::MemberId,
     oauth2_consumer: crate::meetup::oauth2::OAuth2Consumer,
@@ -195,7 +205,7 @@ async fn user_token_refresh_task_impl(
         }
     }
     // Try to refresh the user's oauth tokens
-    println!("Refreshing oauth2 token of member {}", member_id.0);
+    info!("Refreshing oauth2 token of member {}", member_id.0);
     let new_auth_token = crate::meetup::oauth2::refresh_oauth_tokens(
         TokenType::Member(member_id),
         &oauth2_consumer.authorization_client,
@@ -204,7 +214,7 @@ async fn user_token_refresh_task_impl(
     .await;
     match new_auth_token {
         Ok(_) => {
-            println!(
+            info!(
                 "OAuth2 tokens of member {} successfully refreshed",
                 member_id.0
             );

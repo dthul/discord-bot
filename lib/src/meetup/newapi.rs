@@ -378,6 +378,7 @@ impl AsyncClient {
         }
     }
 
+    #[tracing::instrument]
     pub async fn get_event(&self, id: String) -> Result<event_query::EventQueryEvent, Error> {
         use event_query::*;
         let query_variables = Variables { id };
@@ -391,6 +392,7 @@ impl AsyncClient {
         }
     }
 
+    #[tracing::instrument]
     pub fn get_upcoming_events<'a>(
         &'a self,
         urlname: String,
@@ -494,12 +496,14 @@ impl AsyncClient {
         })
     }
 
+    #[tracing::instrument]
     pub fn get_upcoming_events_all_groups<'a>(
         &'a self,
     ) -> impl Stream<Item = Result<UpcomingEventDetails, Error>> + 'a {
         stream::iter(URLNAMES).flat_map(|urlname| self.get_upcoming_events(urlname.into()))
     }
 
+    #[tracing::instrument]
     pub fn get_tickets<'a>(
         &'a self,
         event_id: String,
@@ -598,6 +602,7 @@ impl AsyncClient {
         })
     }
 
+    #[tracing::instrument]
     pub async fn get_tickets_vec(&self, event_id: String) -> Result<Vec<Ticket>, Error> {
         let ticket_stream = self.get_tickets(event_id);
         let mut tickets = vec![];
@@ -611,6 +616,7 @@ impl AsyncClient {
         Ok(tickets)
     }
 
+    #[tracing::instrument]
     pub async fn get_self(&self) -> Result<self_query::SelfQuerySelf, Error> {
         use self_query::*;
         let query = SelfQuery::build_query(Variables {});
@@ -623,6 +629,7 @@ impl AsyncClient {
         }
     }
 
+    #[tracing::instrument]
     pub async fn create_event(&self, new_event: NewEvent) -> Result<NewEventResponse, Error> {
         use create_event_mutation::*;
         let query_variables = Variables { input: new_event };
@@ -647,6 +654,7 @@ impl AsyncClient {
         }
     }
 
+    #[tracing::instrument]
     pub async fn get_group_membership(&self, urlname: String) -> Result<GroupMembership, Error> {
         use group_membership_query::*;
         let query_variables = Variables { urlname: urlname };
@@ -664,6 +672,7 @@ impl AsyncClient {
         }
     }
 
+    #[tracing::instrument]
     pub async fn close_rsvps(&self, event_id: String) -> Result<(), Error> {
         use close_event_rsvps_mutation::*;
         let query_variables = Variables {

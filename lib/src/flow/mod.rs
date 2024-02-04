@@ -1,15 +1,18 @@
 use futures_util::FutureExt;
 use rand::Rng;
 use redis::AsyncCommands;
+use tracing::error;
 
 use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput};
 
+#[derive(Debug)]
 pub struct ScheduleSessionFlow {
     pub id: u64,
     pub event_series_id: db::EventSeriesId,
 }
 
 impl ScheduleSessionFlow {
+    #[tracing::instrument(skip(redis_connection))]
     pub async fn new(
         redis_connection: &mut redis::aio::Connection,
         event_series_id: db::EventSeriesId,
@@ -29,6 +32,7 @@ impl ScheduleSessionFlow {
         })
     }
 
+    #[tracing::instrument(skip(redis_connection))]
     pub async fn retrieve(
         redis_connection: &mut redis::aio::Connection,
         id: u64,
@@ -43,6 +47,7 @@ impl ScheduleSessionFlow {
         Ok(flow)
     }
 
+    #[tracing::instrument(skip(db_connection, redis_connection, meetup_client))]
     pub async fn schedule<'a>(
         self,
         db_connection: sqlx::PgPool,
@@ -108,7 +113,7 @@ impl ScheduleSessionFlow {
         // {
         //     Ok(result) => Some(result),
         //     Err(err) => {
-        //         eprintln!("Could not transfer all RSVPs to the new event.\n{:#?}", err);
+        //         warn!("Could not transfer all RSVPs to the new event.\n{:#?}", err);
         //         None
         //     }
         // };
@@ -128,7 +133,7 @@ impl ScheduleSessionFlow {
         };
         tokio::spawn(sync_future.map(|res| {
             if let Err(err) = res {
-                eprintln!("Could not sync the newly scheduled event:\n{:#?}", err);
+                error!("Could not sync the newly scheduled event:\n{:#?}", err);
             }
         }));
         Ok(new_event)
@@ -143,6 +148,7 @@ impl ScheduleSessionFlow {
         Ok(())
     }
 
+    #[tracing::instrument]
     pub fn new_event_hook(
         mut new_event: crate::meetup::newapi::NewEvent,
         new_date_time: chrono::DateTime<chrono::Utc>,

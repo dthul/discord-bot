@@ -34,6 +34,7 @@ pub fn create_routes() -> Router {
 // - no cookie or last used time too far in the past? Delete the session from Redis, delete the cookie and show login instructions (get link from Hyperion)
 // - possibly in the future: require 2FA for admins (like TOTP) for first login and if the last used time is older than a certain threshold (but not so old that it would count as expired)
 
+#[tracing::instrument(skip(redis_connection))]
 pub async fn generate_login_link(
     redis_connection: &mut redis::aio::Connection,
     discord_id: UserId,
@@ -65,6 +66,7 @@ struct AuthTemplate<'a> {
 
 pub struct AuthenticatedMember(pub MemberId);
 
+#[tracing::instrument(skip_all, fields(auth_id = auth_id, discord_id))]
 async fn auth_handler_get(
     Path(auth_id): Path<String>,
     state: Extension<Arc<State>>,
@@ -73,6 +75,7 @@ async fn auth_handler_get(
     let redis_key = format!("web_session_auth:{}:discord_user", &auth_id);
     // Check if this auth ID is valid
     let discord_id: Option<u64> = redis_connection.get(redis_key).await?;
+    tracing::Span::current().record("discord_id", &discord_id);
     if discord_id.is_none() {
         let template: MessageTemplate = (
             "This link seems to have expired",
@@ -86,6 +89,7 @@ async fn auth_handler_get(
     Ok(template.into_response())
 }
 
+#[tracing::instrument(skip_all, fields(auth_id = form.auth_id, discord_id))]
 async fn auth_handler_post(
     state: Extension<Arc<State>>,
     form: Form<AuthForm>,
@@ -96,6 +100,7 @@ async fn auth_handler_post(
     let mut pipe = redis::pipe();
     pipe.get(&redis_key).del(&redis_key);
     let (discord_id, _): (Option<u64>, u32) = pipe.query_async(&mut redis_connection).await?;
+    tracing::Span::current().record("discord_id", &discord_id);
     let discord_id = match discord_id {
         Some(id) => UserId::new(id),
         None => {
@@ -152,6 +157,7 @@ async fn auth_handler_post(
     Ok(response)
 }
 
+#[tracing::instrument(skip(state), level = "debug")]
 async fn get_or_create_cookie_key(state: &State) -> Result<Key, WebError> {
     // Get cookie key from the database or generate a new one if there is no key
     let mut tx = state.pool.begin().await?;
@@ -229,6 +235,7 @@ async fn logout_handler(
     Ok(RemoveAuthCookie(Redirect::to("/")))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, WebError> {
     let state: &Arc<State> = match req.extensions().get() {
         Some(state) => state,

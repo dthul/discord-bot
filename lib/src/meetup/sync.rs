@@ -2,6 +2,7 @@ use futures_util::{lock::Mutex, stream::StreamExt};
 use lazy_static::lazy_static;
 use simple_error::SimpleError;
 use std::sync::Arc;
+use tracing::{debug, error, info, warn};
 
 use crate::{db, DefaultStr};
 
@@ -34,6 +35,7 @@ lazy_static! {
 // an Arc<Mutex<Option<MeetupClient>>> internally and has the same
 // methods as MeetupClient (so we don't need to match on the Option
 // every time we want to use the client)
+#[tracing::instrument(skip(meetup_client, db_connection))]
 pub async fn sync_task(
     meetup_client: Arc<Mutex<Option<Arc<super::newapi::AsyncClient>>>>,
     db_connection: &sqlx::PgPool,
@@ -55,11 +57,11 @@ pub async fn sync_task(
     let mut event_collector = crate::free_spots::EventCollector::new();
     while let Some(event) = upcoming_events.next().await {
         match event {
-            Err(err) => eprintln!("Couldn't query upcoming event: {}", err),
+            Err(err) => error!("Couldn't query upcoming event: {}", err),
             Ok(event) => {
                 event_collector.add_event(event.clone());
                 match sync_event(event, db_connection).await {
-                    Err(err) => eprintln!("Event sync failed: {}", err),
+                    Err(err) => error!("Event sync failed: {}", err),
                     _ => (),
                 }
             }
@@ -79,7 +81,7 @@ pub async fn sync_task(
     .await?;
     for series_id in meetup_active_event_series {
         match sync_event_series(series_id, meetup_client.as_ref(), db_connection).await {
-            Err(err) => eprintln!("Series sync failed: {}", err),
+            Err(err) => error!("Series sync failed: {}", err),
             _ => (),
         };
         // Add a 250ms delay between each item as a naive rate limit for the Meetup API
@@ -90,6 +92,7 @@ pub async fn sync_task(
 
 // This function is supposed to be idempotent, so calling it with the same
 // event is fine.
+#[tracing::instrument(skip(db_connection))]
 pub async fn sync_event(
     event: super::newapi::UpcomingEventDetails,
     db_connection: &sqlx::PgPool,
@@ -117,7 +120,7 @@ pub async fn sync_event(
             Some(id) => match id.as_str().parse::<u64>() {
                 Ok(id) => Some(id),
                 _ => {
-                    eprintln!(
+                    error!(
                         "Event {} specifies invalid category ID {}",
                         title,
                         id.as_str()
@@ -126,7 +129,7 @@ pub async fn sync_event(
                 }
             },
             _ => {
-                eprintln!("Internal error parsing category ID");
+                error!("Internal error parsing category ID");
                 None
             }
         },
@@ -139,7 +142,7 @@ pub async fn sync_event(
     {
         urlname
     } else {
-        eprintln!("Event {} is missing a group urlname", title,);
+        error!("Event {} is missing a group urlname", title,);
         return Ok(());
     };
     if indicated_channel_id.is_some() && !(is_new_adventure || is_new_campaign) {
@@ -152,15 +155,15 @@ pub async fn sync_event(
     }
     // Either: new adventure, new campaign, or continuation (event series)
     if !(is_new_adventure || is_new_campaign || event_series_captures.is_some()) {
-        println!("Syncing task: Ignoring event \"{}\"", title);
+        debug!("Syncing task: Ignoring event \"{}\"", title);
         return Ok(());
     } else {
-        println!("Syncing task: found event \"{}\"", title);
+        debug!("Syncing task: found event \"{}\"", title);
     }
     if event_series_captures.is_some()
         && (is_new_adventure || is_new_campaign || indicated_channel_id.is_some())
     {
-        eprintln!(
+        warn!(
             "Syncing task: Event \"{}\" specifies a series as well as a new adventure/campaign \
              tag, ignoring",
             title
@@ -188,7 +191,7 @@ pub async fn sync_event(
         let series_event_id = match event_series_captures.name("event_id") {
             Some(id) => id.as_str(),
             None => {
-                eprintln!("Syncing task: error capturing event_id");
+                error!("Syncing task: error capturing event_id");
                 return Ok(());
             }
         };
@@ -203,7 +206,7 @@ pub async fn sync_event(
         .fetch_optional(&mut *tx)
         .await?;
         if event_series_id.is_none() {
-            eprintln!("Event syncing task: Meetup event {} indicates that it is part of the same event series as Meetup event {} but the latter is not in the database", event.id, series_event_id);
+            error!("Event syncing task: Meetup event {} indicates that it is part of the same event series as Meetup event {} but the latter is not in the database", event.id, series_event_id);
             return Ok(());
         }
         event_series_id
@@ -220,7 +223,7 @@ pub async fn sync_event(
         .fetch_one(&mut *tx)
         .await?;
         if is_managed_channel {
-            eprintln!("Event syncing task: Meetup event {} indicates a channel but that channel is already managed", event.id);
+            error!("Event syncing task: Meetup event {} indicates a channel but that channel is already managed", event.id);
             return Ok(());
         }
     }
@@ -243,13 +246,13 @@ pub async fn sync_event(
         // doesn't indicate that it is the start of a
         // new series or belongs to an existing series, do nothing
         if !(is_new_adventure || is_new_campaign || indicated_event_series_id.is_some()) {
-            println!("Syncing task: Ignoring event \"{}\"", title);
+            debug!("Syncing task: Ignoring event \"{}\"", title);
             return Ok(());
         }
         // If this event has no series ID yet, but the channel
         // it wants to be associated with does, then something is fishy
         if indicated_channel_series.is_some() {
-            println!(
+            warn!(
                 "Event \"{}\" wants to be associated with a certain channel but that \
                              channel already belongs to an event series",
                 title
@@ -265,7 +268,7 @@ pub async fn sync_event(
             // If this event's series ID does not match the channel's series ID, something is fishy
             if let Some(channel_series) = indicated_channel_series {
                 if channel_series != existing_series_id {
-                    eprintln!(
+                    error!(
                         "Event \"{}\" wants to be associated with a certain channel \
                          but that channel already belongs to a different event series",
                         title
@@ -276,7 +279,7 @@ pub async fn sync_event(
             // If this event's series ID does not match the indicated event series ID, issue a warning
             if let Some(indicated_event_series_id) = indicated_event_series_id {
                 if &existing_series_id != &indicated_event_series_id {
-                    eprintln!(
+                    error!(
                         "Warning: Event \"{}\" indicates event series {} but is \
                          already associated with event series {}.",
                         title, indicated_event_series_id, existing_series_id
@@ -299,7 +302,7 @@ pub async fn sync_event(
                     // If this event wants to be associated with a channel but that channel already
                     // has an event series ID, something is fishy
                     if indicated_channel_series.is_some() {
-                        eprintln!(
+                        error!(
                             "Event \"{}\" wants to be associated with a certain \
                              channel but that channel already belongs to a different \
                              event series",
@@ -309,7 +312,7 @@ pub async fn sync_event(
                     } else {
                         // The event wants to be associated with a channel and that channel is not
                         // associated to anything else yet, looking good!
-                        println!(
+                        info!(
                             "Associating event \"{}\" with Discord channel {}",
                             title, channel_id
                         );
@@ -336,7 +339,7 @@ pub async fn sync_event(
                 indicated_event_series_id
             } else {
                 // Something went wrong
-                eprintln!(
+                error!(
                     "Syncing task: internal error (event has no series id yet, but is \
                      neither a new adventure/campaign nor does it belong to a session"
                 );
@@ -412,10 +415,11 @@ pub async fn sync_event(
 
     tx.commit().await?;
 
-    println!("Event syncing task: Synced event \"{}\"", title);
+    info!("Event syncing task: Synced event \"{}\"", title);
     Ok(())
 }
 
+#[tracing::instrument(skip(meetup_client, db_connection))]
 async fn sync_event_series(
     series_id: db::EventSeriesId,
     meetup_client: &super::newapi::AsyncClient,
@@ -433,7 +437,7 @@ async fn sync_event_series(
             break;
         };
         // The first element in this vector will be the next upcoming event
-        println!(
+        info!(
             "Syncing task: Querying RSVPs for event \"{}\"",
             next_event.title
         );
@@ -441,7 +445,7 @@ async fn sync_event_series(
         let tickets = match meetup_client.get_tickets_vec(meetup_event.meetup_id).await {
             Err(super::newapi::Error::ResourceNotFound) => {
                 // Remove this event from the database
-                eprintln!(
+                error!(
                     "Event {} was deleted from Meetup, removing from database...",
                     next_event.id.0
                 );
@@ -451,19 +455,20 @@ async fn sync_event_series(
                 )
                 .execute(db_connection)
                 .await?;
-                eprintln!("Removed event {} from database", next_event.id.0);
+                error!("Removed event {} from database", next_event.id.0);
                 continue;
             }
             Err(err) => return Err(err.into()),
             Ok(tickets) => tickets,
         };
         // Sync the RSVPs
-        println!("Syncing task: Found {} RSVPs", tickets.len());
+        info!("Syncing task: Found {} RSVPs", tickets.len());
         sync_rsvps(next_event.id, tickets, db_connection).await?;
     }
     Ok(())
 }
 
+#[tracing::instrument(skip(db_connection))]
 pub async fn sync_rsvps(
     event_id: db::EventId,
     tickets: Vec<super::newapi::Ticket>,

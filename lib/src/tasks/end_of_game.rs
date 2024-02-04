@@ -10,6 +10,7 @@ use serenity::{
 };
 use simple_error::SimpleError;
 use std::collections::HashMap;
+use tracing::{debug, error, info, info_span, Instrument};
 
 // Sends channel deletion reminders to expired Discord channels
 pub async fn create_recurring_end_of_game_task(
@@ -43,12 +44,16 @@ pub async fn create_recurring_end_of_game_task(
     loop {
         // Wait for the next interval tick
         interval_timer.tick().await;
-        if let Err(err) = end_of_game_task(&db_connection, &mut discord_api, bot_id).await {
-            eprintln!("End of game task failed:\n{:#?}", err);
+        if let Err(err) = end_of_game_task(&db_connection, &mut discord_api, bot_id)
+            .instrument(info_span!("create_recurring_end_of_game_task"))
+            .await
+        {
+            error!("End of game task failed:\n{:#?}", err);
         }
     }
 }
 
+#[tracing::instrument(skip(db_connection, discord_api))]
 pub async fn end_of_game_task(
     db_connection: &sqlx::PgPool,
     discord_api: &mut crate::discord::CacheAndHttp,
@@ -65,7 +70,7 @@ pub async fn end_of_game_task(
     for series_id in event_series {
         if let Err(err) = update_series_channel_expiration(series_id, db_connection).await {
             some_failed = true;
-            eprintln!("Series channel expiration update failed: {:#}", err);
+            error!("Series channel expiration update failed: {:#}", err);
         }
     }
     let existing_channels = crate::discord::sync::ids::GUILD_ID
@@ -103,13 +108,13 @@ pub async fn end_of_game_task(
                     .await
                     {
                         some_failed = true;
-                        eprintln!("Channel expiration reminder failed: {:#}", err);
+                        error!("Channel expiration reminder failed: {:#}", err);
                     }
                 }
             }
             Err(err) => {
                 some_failed = true;
-                eprintln!("Error during channel deletion: {:#}", err);
+                error!("Error during channel deletion: {:#}", err);
             }
         }
     }
@@ -133,7 +138,7 @@ pub async fn end_of_game_task(
         .await
         {
             some_failed = true;
-            eprintln!("Error during voice channel deletion: {:#}", err);
+            error!("Error during voice channel deletion: {:#}", err);
         }
     }
     let existing_roles = crate::discord::sync::ids::GUILD_ID
@@ -153,7 +158,7 @@ pub async fn end_of_game_task(
             delete_marked_role(false, role, &existing_roles, db_connection, discord_api).await
         {
             some_failed = true;
-            eprintln!("Error during role deletion: {:#}", err);
+            error!("Error during role deletion: {:#}", err);
         }
     }
     let discord_host_roles = sqlx::query!(
@@ -170,7 +175,7 @@ pub async fn end_of_game_task(
             delete_marked_role(true, role, &existing_roles, db_connection, discord_api).await
         {
             some_failed = true;
-            eprintln!("Error during host role deletion: {:#}", err);
+            error!("Error during host role deletion: {:#}", err);
         }
     }
     if some_failed {
@@ -180,6 +185,7 @@ pub async fn end_of_game_task(
     }
 }
 
+#[tracing::instrument(skip(db_connection))]
 async fn update_series_channel_expiration(
     series_id: db::EventSeriesId,
     db_connection: &sqlx::PgPool,
@@ -196,7 +202,7 @@ async fn update_series_channel_expiration(
     let discord_text_channel_id = if let Some(id) = discord_text_channel_id {
         id
     } else {
-        println!(
+        info!(
             "Expiration update: Event series {} has no channel associated with it",
             series_id.0
         );
@@ -263,7 +269,7 @@ async fn update_series_channel_expiration(
             .await?;
         }
         tx.commit().await?;
-        println!(
+        info!(
             "Set expiration time of channel {} to {}",
             discord_text_channel_id, new_expiration_time
         );
@@ -271,6 +277,7 @@ async fn update_series_channel_expiration(
     Ok(())
 }
 
+#[tracing::instrument(skip(db_connection, discord_api))]
 async fn send_channel_expiration_reminder(
     channel_id: ChannelId,
     db_connection: &sqlx::PgPool,
@@ -336,7 +343,7 @@ async fn send_channel_expiration_reminder(
             }
         }
         // Send a reminder and update the last reminder time
-        println!("Reminding channel {} of its expiration", channel_id);
+        info!("Reminding channel {} of its expiration", channel_id);
         let channel_roles =
             crate::get_channel_roles(channel_id, &mut db_connection.begin().await?).await?;
         let user_role = channel_roles.map(|roles| roles.user);
@@ -349,7 +356,7 @@ async fn send_channel_expiration_reminder(
             .send_message(&discord_api.http, message_builder)
             .await?;
         sqlx::query!("UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1", channel_id.get() as i64).execute(db_connection).await?;
-        println!(
+        debug!(
             "Updated channel's {} latest expiration reminder time",
             channel_id
         );
@@ -364,6 +371,7 @@ enum DeletionStatus {
     AlreadyDeleted,
 }
 
+#[tracing::instrument(skip(db_connection, discord_api))]
 async fn delete_marked_channel(
     channel_type: ChannelType,
     channel_id: ChannelId,
@@ -421,6 +429,7 @@ async fn delete_marked_channel(
     Ok(DeletionStatus::Deleted)
 }
 
+#[tracing::instrument(skip(db_connection, discord_api))]
 async fn delete_marked_role(
     is_host_role: bool,
     role_id: RoleId,

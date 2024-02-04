@@ -13,8 +13,13 @@ use std::{
 use futures::future;
 use serenity::all::ApplicationId;
 use sqlx::{postgres::PgPoolOptions, Executor};
+use tracing::{self, info, warn};
 
 fn main() {
+    let subscriber = tracing_subscriber::fmt().compact().finish();
+    // use that subscriber to process traces emitted after this point
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Could not initialise the tracing subscriber");
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
     let is_test_environment = match environment.as_str() {
         "prod" => false,
@@ -44,7 +49,7 @@ fn main() {
         env::var("STRIPE_CLIENT_SECRET").expect("Found no STRIPE_CLIENT_SECRET in environment");
     let stripe_webhook_signing_secret = env::var("STRIPE_WEBHOOK_SIGNING_SECRET").ok();
     if stripe_webhook_signing_secret.is_none() {
-        eprintln!("No Stripe webhook signing secret set. Will not listen to Stripe webhooks.");
+        warn!("No Stripe webhook signing secret set. Will not listen to Stripe webhooks.");
     }
     let api_keys: Vec<_> = env::var("API_KEYS")
         .as_deref()
@@ -54,7 +59,7 @@ fn main() {
         .map(|key| key.trim().to_string())
         .collect();
     if api_keys.len() == 0 {
-        eprintln!("No API keys set. Will not listen to API requests.");
+        warn!("No API keys set. Will not listen to API requests.");
     }
     let static_file_directory = env::var("STATIC_FILE_DIRECTORY").ok();
 
@@ -96,8 +101,8 @@ fn main() {
         match async_runtime.block_on(pool_options.connect(&database_url)) {
             Ok(pool) => break pool,
             Err(err) => {
-                eprintln!("Could not connect to the Postgres database:\n{:#?}", err);
-                println!("Retrying in 5 seconds");
+                warn!("Could not connect to the Postgres database:\n{:#?}", err);
+                info!("Retrying in 5 seconds");
                 std::thread::sleep(std::time::Duration::from_secs(5));
             }
         }
@@ -322,13 +327,13 @@ fn main() {
     abort_handle_syncing_task.abort();
     abort_handle_stripe_subscription_refresh_task.abort();
     abort_web_server_tx.send(()).ok();
-    println!("About to shut down the tokio runtime.");
+    info!("About to shut down the tokio runtime.");
     // Give any currently running tasks a chance to finish
     async_runtime.shutdown_timeout(tokio::time::Duration::from_secs(20));
-    println!("Tokio runtime shut down.");
-    println!("Joining signal handling thread.");
+    info!("Tokio runtime shut down.");
+    info!("Joining signal handling thread.");
     signals_thread
         .join()
         .expect("Could not join signal handling thread.");
-    println!("Signal handling thread shut down.\nHyperion out.");
+    info!("Signal handling thread shut down.\nHyperion out.");
 }

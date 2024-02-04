@@ -12,6 +12,7 @@ use chrono::{offset::TimeZone, Datelike, NaiveDateTime, Timelike};
 use chrono_tz::Europe;
 use lib::{db, DefaultStr};
 use serenity::all::Mentionable;
+use tracing::{error, info};
 
 use super::{server::State, MessageTemplate, WebError};
 
@@ -91,12 +92,13 @@ pub mod filters {
     }
 }
 
+#[tracing::instrument(skip(state))]
 async fn schedule_session_handler(
     Extension(state): Extension<Arc<State>>,
     Path(flow_id): Path<u64>,
 ) -> Result<Response, WebError> {
     let mut redis_connection = state.redis_client.get_async_connection().await?;
-    eprintln!("Retrieving flow...");
+    info!("Retrieving flow...");
     let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,
@@ -105,9 +107,9 @@ async fn schedule_session_handler(
             return Ok(template.into_response());
         }
     };
-    eprintln!("... got it!\nRetrieving last event...");
+    info!("... got it!\nRetrieving last event...");
     let event = db::get_last_event_in_series(&state.pool, flow.event_series_id).await?;
-    eprintln!("... got it!");
+    info!("... got it!");
     match event {
         None => {
             let template: MessageTemplate = (
@@ -157,6 +159,7 @@ async fn schedule_session_handler(
     }
 }
 
+#[tracing::instrument(skip(state))]
 async fn schedule_session_post_handler(
     Extension(state): Extension<Arc<State>>,
     Path(flow_id): Path<u64>,
@@ -283,7 +286,7 @@ async fn schedule_session_post_handler(
                 is_open_game,
             );
             if let Ok(event_input) = &result {
-                println!(
+                info!(
                     "Trying to create a Meetup event with the following details:\n{:#?}",
                     event_input
                 );
@@ -307,7 +310,7 @@ async fn schedule_session_post_handler(
         };
         // Delete the flow, ignoring errors
         if let Err(err) = flow.delete(&mut redis_connection).await {
-            eprintln!(
+            error!(
                 "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
                 err
             );
@@ -335,7 +338,7 @@ async fn schedule_session_post_handler(
         // // Close the RSVPs, ignoring errors
         let rsvps_are_closed =
             if let Err(err) = meetup_client.close_rsvps(new_event.id.0.clone()).await {
-                eprintln!(
+                error!(
                     "RSVPs for event {} could not be closed:\n{:#?}",
                     &new_event.id, err
                 );
@@ -379,7 +382,7 @@ async fn schedule_session_post_handler(
         )
         .await
         {
-            eprintln!(
+            error!(
                 "Encountered an error when trying to announce the new session in the \
                  channel:\n{:#?}",
                 err
@@ -398,7 +401,7 @@ async fn schedule_session_post_handler(
                 lib::discord::util::say_in_bot_alerts_channel(&message, &state.discord_cache_http)
                     .await
             {
-                eprintln!(
+                error!(
                     "Encountered an error when trying to announce a new session in the bot alerts \
                      channel:\n{:#?}",
                     err

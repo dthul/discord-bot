@@ -186,6 +186,7 @@ impl EventCollector {
         self.events.push(event);
     }
 
+    #[tracing::instrument(skip(discord_api))]
     pub async fn update_channel(
         &self,
         discord_api: &crate::discord::CacheAndHttp,
@@ -323,6 +324,7 @@ impl EventCollector {
     }
 
     // Figure out which location (if any) an event belongs to
+    #[tracing::instrument(level = "trace", fields(location))]
     fn event_location(event: &UpcomingEventDetails) -> Option<Location> {
         let venue = match &event.venue {
             Some(venue) => venue,
@@ -347,6 +349,7 @@ impl EventCollector {
         // We will use latitude and longitude to figure out the city instead
         let point = Point::new(venue.lng, venue.lat);
         let location = Location::closest(point);
+        tracing::Span::current().record("location", format!("{:?}", location));
         Some(location)
     }
 }

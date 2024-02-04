@@ -9,6 +9,7 @@ use axum::{
     Router,
 };
 use lazy_static::lazy_static;
+use tracing::{error, info};
 
 use super::server::State;
 
@@ -59,31 +60,33 @@ impl Header for StripeSignatureHeader {
     }
 }
 
+#[tracing::instrument(skip_all)]
 async fn stripe_webhook_handler(
     TypedHeader(signature): TypedHeader<StripeSignatureHeader>,
     Extension(state): Extension<Arc<State>>,
     payload: Bytes,
 ) -> StatusCode {
-    println!("Stripe webhook!");
+    info!("Stripe webhook!");
     let stripe_webhook_secret =
         if let Some(stripe_webhook_secret) = state.stripe_webhook_secret.clone() {
             stripe_webhook_secret
         } else {
-            eprintln!("Stripe webhook secret not set");
+            error!("Stripe webhook secret not set");
             return StatusCode::INTERNAL_SERVER_ERROR;
         };
     let event = if let Ok(payload) = std::str::from_utf8(&payload) {
         if let Ok(event) =
             stripe::Webhook::construct_event(&payload, &signature, &stripe_webhook_secret)
         {
-            println!("Webhook event:\n{:#?}", event);
+            info!(?event, "Received Stripe event");
+            tracing::Span::current().record("event", format!("{:?}", event));
             event
         } else {
-            eprintln!("Event construction failed");
+            error!("Event construction failed");
             return StatusCode::BAD_REQUEST;
         }
     } else {
-        eprintln!("Payload to UTF8 conversion failed");
+        error!("Payload to UTF8 conversion failed");
         return StatusCode::BAD_REQUEST;
     };
     let webhook_handler_future = async move {
@@ -96,7 +99,7 @@ async fn stripe_webhook_handler(
                 )
                 .await
                 {
-                    eprintln!("Could not handle new subscription event:\n{:#?}", err);
+                    error!("Could not handle new subscription event:\n{:#?}", err);
                 }
             }
         }
@@ -105,6 +108,7 @@ async fn stripe_webhook_handler(
     return StatusCode::OK;
 }
 
+#[tracing::instrument(skip_all)]
 async fn handle_new_subscription(
     discord_api: &lib::discord::CacheAndHttp,
     stripe_client: &stripe::Client,
@@ -120,7 +124,7 @@ async fn handle_new_subscription(
     let (customer, product) =
         lib::tasks::subscription_roles::get_customer_and_product(stripe_client, subscription)
             .await?;
-    println!(
+    info!(
         "Received new subscription with product '{:#?}'",
         product.name
     );
@@ -154,7 +158,7 @@ async fn handle_new_subscription(
                     )
                     .await
                 {
-                    println!("Adding GM Champion role");
+                    info!("Adding GM Champion role");
                     lib::tasks::subscription_roles::add_member_role(
                         discord_api,
                         discord_id,
@@ -166,7 +170,7 @@ async fn handle_new_subscription(
                     )
                     .await?;
                 } else {
-                    println!("Adding Champion role");
+                    info!("Adding Champion role");
                     lib::tasks::subscription_roles::add_member_role(
                         discord_api,
                         discord_id,
@@ -180,7 +184,7 @@ async fn handle_new_subscription(
                 }
             }
             if is_insider_product {
-                println!("Adding Insider role");
+                info!("Adding Insider role");
                 lib::tasks::subscription_roles::add_member_role(
                     discord_api,
                     discord_id,
@@ -190,13 +194,13 @@ async fn handle_new_subscription(
                 .await?;
             }
         } else {
-            eprintln!(
+            error!(
                 "Could not match the Discord username '{}' to an actual Discord user",
                 username
             );
         }
     } else {
-        eprintln!("Found no 'Discord' field on the customer metadata object");
+        error!("Found no 'Discord' field on the customer metadata object");
     }
     Ok(())
 }

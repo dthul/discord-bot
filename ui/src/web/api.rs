@@ -14,6 +14,7 @@ use lazy_static::lazy_static;
 use lib::db::get_meetup_events_participants;
 use serde::Serialize;
 use serenity::model::prelude::UserId;
+use tracing::error;
 
 use super::{server::State, WebError};
 
@@ -61,7 +62,7 @@ impl Header for ApiKeyHeader {
     fn encode<E: Extend<axum::headers::HeaderValue>>(&self, values: &mut E) {
         match axum::headers::HeaderValue::from_str(&self.0) {
             Ok(header_value) => values.extend(Some(header_value)),
-            Err(err) => eprintln!("Failed to encode Api-Key HTTP header: {:#?}", err),
+            Err(err) => error!("Failed to encode Api-Key HTTP header: {:#?}", err),
         }
     }
 }
@@ -101,7 +102,7 @@ impl Header for DiscordUsernameHeader {
     fn encode<E: Extend<axum::headers::HeaderValue>>(&self, values: &mut E) {
         match axum::headers::HeaderValue::from_str(&self.0) {
             Ok(header_value) => values.extend(Some(header_value)),
-            Err(err) => eprintln!("Failed to encode Discord-Username HTTP header: {:#?}", err),
+            Err(err) => error!("Failed to encode Discord-Username HTTP header: {:#?}", err),
         }
     }
 }
@@ -130,6 +131,7 @@ where
     }
 }
 
+#[tracing::instrument(skip_all, fields(discord_username = discord_username.0))]
 async fn check_discord_username_handler(
     _: ApiKeyIsValid,
     TypedHeader(discord_username): TypedHeader<DiscordUsernameHeader>,
@@ -157,6 +159,7 @@ struct ListPlayersEntry {
     is_host: bool,
 }
 
+#[tracing::instrument(skip_all, fields(meetup_event_id = meetup_event_id))]
 async fn list_players_handler(
     _: ApiKeyIsValid,
     Path(meetup_event_id): Path<String>,

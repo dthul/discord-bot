@@ -19,9 +19,18 @@ use serenity::{
     },
     prelude::*,
 };
+use tracing::{error, info};
 
 use super::commands::{CommandContext, PreparedCommands};
 
+#[tracing::instrument(skip(
+    redis_client,
+    pool,
+    async_meetup_client,
+    oauth2_consumer,
+    stripe_client,
+    shutdown_signal
+))]
 pub async fn create_discord_client(
     discord_token: &str,
     application_id: ApplicationId,
@@ -56,8 +65,8 @@ pub async fn create_discord_client(
         .get_current_user()
         .await
         .map(|info| (info.id, info.name.clone()))?;
-    println!("Bot ID: {}", bot_id);
-    println!("Bot name: {}", bot_name);
+    info!("Bot ID: {}", bot_id);
+    info!("Bot name: {}", bot_name);
 
     // Prepare the commands
     let prepared_commands = Arc::new(super::commands::prepare_commands(bot_id, &bot_name)?);
@@ -127,6 +136,7 @@ impl TypeMapKey for PoolKey {
 pub struct Handler;
 
 impl Handler {
+    #[tracing::instrument(skip_all, fields(message.id = %cmdctx.msg.id, message.channel = %cmdctx.msg.channel_id, message.author.id = %cmdctx.msg.author.id, message.author.name = cmdctx.msg.author.name, message.content = cmdctx.msg.content))]
     async fn handle_message(
         cmdctx: &mut CommandContext,
         commands: Arc<PreparedCommands>,
@@ -141,7 +151,7 @@ impl Handler {
         let i = match matches.as_slice() {
             [] => {
                 // unknown command
-                eprintln!("Unrecognized command: {}", &cmdctx.msg.content);
+                error!("Unrecognized command: {}", &cmdctx.msg.content);
                 cmdctx
                     .msg
                     .channel_id
@@ -153,7 +163,7 @@ impl Handler {
             [i] => *i, // unique command found
             l @ _ => {
                 // multiple commands found
-                eprintln!(
+                error!(
                     "Ambiguous command: {}. Matching regexes: {:#?}",
                     &cmdctx.msg.content, l
                 );
@@ -172,7 +182,7 @@ impl Handler {
             Some(captures) => captures,
             None => {
                 // This should not happen
-                eprintln!("Unmatcheable command: {}", &message_content);
+                error!("Unmatcheable command: {}", &message_content);
                 let _ = cmdctx.msg.channel_id.say(
                     &cmdctx.ctx,
                     "I can't parse your command. This is a bug. Could you please let a bot admin \
@@ -259,7 +269,7 @@ impl EventHandler for Handler {
         let is_dm = match cmdctx.is_dm().await {
             Ok(is_dm) => is_dm,
             Err(err) => {
-                eprintln!(
+                error!(
                     "Could not figure out whether this message is a DM:\n{:#?}",
                     err
                 );
@@ -293,7 +303,7 @@ impl EventHandler for Handler {
         // Poor man's try block
         let res: Result<(), lib::meetup::Error> = Self::handle_message(&mut cmdctx, commands).await;
         if let Err(err) = res {
-            eprintln!("Error in message handler:\n{:#?}", err);
+            error!("Error in message handler:\n{:#?}", err);
             let _ = cmdctx
                 .msg
                 .channel_id
@@ -308,9 +318,10 @@ impl EventHandler for Handler {
     //
     // In this case, just print what the current user's username is.
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        info!("{} is connected!", ready.user.name);
     }
 
+    #[tracing::instrument(skip_all, fields(member.nick = new_member.nick, member.user.id = %new_member.user.id, member.user.name = %new_member.user.name))]
     async fn guild_member_addition(&self, ctx: Context, new_member: Member) {
         if new_member.guild_id != lib::discord::sync::ids::GUILD_ID {
             return;
@@ -342,7 +353,7 @@ impl EventHandler for Handler {
         let guild_id = match guilds.as_slice() {
             [guild] => guild,
             _ => {
-                eprintln!("cache_ready event received not exactly one guild");
+                error!("cache_ready event received not exactly one guild");
                 return;
             }
         };
@@ -350,7 +361,7 @@ impl EventHandler for Handler {
             Some(members) => members,
             None => return,
         };
-        println!("Updating {} cached member nicks", members.len());
+        info!("Updating {} cached member nicks", members.len());
         for (user_id, member) in members {
             let nick = member.nick.as_deref().unwrap_or(member.user.name.as_str());
             Self::update_member_nick(&ctx, user_id, nick).await.ok();
@@ -406,12 +417,14 @@ impl EventHandler for Handler {
 }
 
 impl Handler {
+    #[tracing::instrument(skip(ctx), fields(user.id = %user.id, user.name = user.name))]
     async fn send_welcome_message(ctx: &Context, user: &User) {
         user.direct_message(ctx, CreateMessage::new().content(strings::WELCOME_MESSAGE))
             .await
             .ok();
     }
 
+    #[tracing::instrument(skip(ctx))]
     async fn update_member_nick(
         ctx: &Context,
         discord_id: UserId,

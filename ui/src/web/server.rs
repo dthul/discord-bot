@@ -23,6 +23,7 @@ pub struct State {
     pub stripe_client: Arc<stripe::Client>,
     pub api_keys: Vec<String>,
 }
+use tracing::error;
 
 #[derive(Template)]
 #[template(path = "main.html")]
@@ -83,7 +84,7 @@ pub fn create_server(
             .with_graceful_shutdown(shutdown_signal)
             .await
         {
-            eprintln!("Web server exited with an error:\n{:#?}", err);
+            error!("Web server exited with an error:\n{:#?}", err);
         }
     }
 }

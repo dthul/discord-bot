@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::db;
 
 // TODO: move into flow?
+#[tracing::instrument(skip(redis_connection))]
 pub async fn generate_meetup_linking_link(
     redis_connection: &mut redis::aio::Connection,
     discord_id: UserId,
@@ -78,11 +79,13 @@ impl OAuth2Consumer {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum TokenType {
     Member(db::MemberId),
     Organizer,
 }
 
+#[tracing::instrument(skip(oauth2_client, db_connection))]
 pub async fn refresh_oauth_tokens(
     token_type: TokenType,
     oauth2_client: &BasicClient,
