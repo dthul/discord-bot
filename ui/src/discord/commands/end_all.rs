@@ -10,7 +10,7 @@ fn end_all<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let pool = context.pool().await?;
+    let pool = context.pool();
     // Find all channels which can be ended
     let channel_ids = sqlx::query!(
         r#"SELECT discord_id FROM event_series_text_channel WHERE

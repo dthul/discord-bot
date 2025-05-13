@@ -1,8 +1,6 @@
-use std::num::NonZeroU64;
-
 use command_macro::command;
 use lib::db;
-use serenity::{all::Mentionable, model::id::UserId};
+use serenity::{all::Mentionable, model::id::UserId, nonmax::NonMaxU64};
 
 #[command]
 #[regex(
@@ -33,8 +31,8 @@ fn whois<'a>(
         // Look up by Discord ID
         let discord_id = capture.as_str();
         // Try to convert the specified ID to an integer
-        let discord_id = match discord_id.parse::<NonZeroU64>() {
-            Ok(id) => UserId::from(id),
+        let discord_id = match discord_id.parse::<NonMaxU64>() {
+            Ok(id) => UserId::from(id.get()),
             _ => {
                 context
                     .msg

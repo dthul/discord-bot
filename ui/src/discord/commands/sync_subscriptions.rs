@@ -8,7 +8,7 @@ fn sync_subscriptions<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let stripe_client = context.stripe_client().await?;
+    let stripe_client = context.stripe_client();
     let discord_api = (&context.ctx).into();
     tokio::spawn(async move {
         lib::tasks::subscription_roles::update_roles(&discord_api, &stripe_client).await

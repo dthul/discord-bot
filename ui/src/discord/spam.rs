@@ -1,6 +1,6 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use redis::AsyncCommands;
-use serenity::{model::id::ChannelId, prelude::*};
+use serenity::model::id::ChannelId;
 use std::sync::Arc;
 
 use super::bot::UserData;

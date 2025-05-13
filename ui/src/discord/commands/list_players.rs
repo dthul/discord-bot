@@ -14,7 +14,7 @@ fn list_players<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     // Check whether this is a bot controlled channel
     let event_series = lib::get_channel_series(context.msg.channel_id, &mut tx).await?;
@@ -58,7 +58,7 @@ fn list_players<'a>(
     // TODO: check whether this returns offline members
     let discord_player_ids = if let Some(guild_id) = context.msg.guild_id {
         let mut discord_player_ids = vec![];
-        let mut members = guild_id.members_iter(&context.ctx).boxed();
+        let mut members = guild_id.members_iter(&context.ctx.http).boxed();
         while let Some(member_result) = members.next().await {
             if let Ok(member) = member_result {
                 if member.roles.contains(&channel_roles.user) {
@@ -155,7 +155,7 @@ fn list_players<'a>(
                         .await
                     {
                         Some(nick) => nick,
-                        None => user.name,
+                        None => user.name.to_string(),
                     },
                     Err(_) => discord_id.mention().to_string(),
                 }

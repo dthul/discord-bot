@@ -13,7 +13,7 @@ fn schedule_session<'a>(
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     // Find the series belonging to the channel
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     let event_series = lib::get_channel_series(context.msg.channel_id, &mut tx).await?;
     let event_series = if let Some(event_series) = event_series {
@@ -36,7 +36,7 @@ fn schedule_session<'a>(
         .msg
         .author
         .direct_message(
-            &context.ctx,
+            &context.ctx.http,
             CreateMessage::new().content(format!(
                 "Use the following link to schedule your next session:\n{}",
                 link
@@ -44,6 +44,6 @@ fn schedule_session<'a>(
         )
         .await
         .ok();
-    context.msg.react(&context.ctx, '\u{2705}').await.ok();
+    context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
     Ok(())
 }

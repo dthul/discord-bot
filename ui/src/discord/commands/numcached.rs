@@ -9,14 +9,14 @@ pub fn numcached<'a>(
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     let num_cached_members = lib::discord::sync::ids::GUILD_ID
-        .to_guild_cached(&context.ctx)
+        .to_guild_cached(&context.ctx.cache)
         .map(|guild| guild.members.len());
     if let Some(num_cached_members) = num_cached_members {
         context
             .msg
             .channel_id
             .say(
-                &context.ctx,
+                &context.ctx.http,
                 format!(
                     "I have {} members cached for this guild",
                     num_cached_members
@@ -29,7 +29,7 @@ pub fn numcached<'a>(
             .msg
             .channel_id
             .say(
-                &context.ctx,
+                &context.ctx.http,
                 "No guild associated with this message (use the command from a guild channel \
                  instead of a direct message).",
             )

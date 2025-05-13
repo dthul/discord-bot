@@ -30,7 +30,7 @@ fn snooze<'a>(
             .ok();
         return Ok(());
     };
-    let pool = context.pool().await?;
+    let pool = context.pool();
     if num_days == 0 {
         // Remove the snooze
         sqlx::query!(

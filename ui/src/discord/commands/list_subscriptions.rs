@@ -13,12 +13,12 @@ fn list_subscriptions<'a>(
         .msg
         .author
         .direct_message(
-            &context.ctx,
+            &context.ctx.http,
             CreateMessage::new().content("Sure! This might take a moment..."),
         )
         .await
         .ok();
-    let stripe_client = context.stripe_client().await?;
+    let stripe_client = context.stripe_client();
     let subscriptions = lib::stripe::list_active_subscriptions(&stripe_client).await?;
     let mut message = String::new();
     for subscription in &subscriptions {
@@ -44,7 +44,7 @@ fn list_subscriptions<'a>(
         .msg
         .author
         .direct_message(
-            &context.ctx,
+            &context.ctx.http,
             CreateMessage::new().content(format!("Active subscriptions:\n{}", message)),
         )
         .await?;

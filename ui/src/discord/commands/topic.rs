@@ -1,6 +1,7 @@
 use command_macro::command;
+use lib::discord::sync::ids::GUILD_ID;
 use redis::{AsyncCommands, RedisResult};
-use serenity::{builder::EditChannel, model::channel::Channel};
+use serenity::{all::CacheHttp, builder::EditChannel, model::channel::Channel};
 use std::time::Duration;
 
 #[command]
@@ -14,7 +15,10 @@ fn set_voice_topic<'a>(
     captures: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     // Indicate that something is happening
-    let _typing_indicator = context.msg.channel_id.start_typing(&context.ctx.http);
+    let _typing_indicator = context
+        .msg
+        .channel_id
+        .start_typing(context.ctx.http.clone());
     // Check if there is a user topic voice channel
     let voice_channel_id = if let Some(id) = lib::discord::sync::ids::USER_TOPIC_VOICE_CHANNEL_ID {
         id
@@ -44,7 +48,7 @@ fn set_voice_topic<'a>(
             .msg
             .channel_id
             .say(
-                &context.ctx,
+                context.ctx.http(),
                 "That topic is too short, it needs to have at least 2 characters.",
             )
             .await?;
@@ -55,37 +59,39 @@ fn set_voice_topic<'a>(
             .msg
             .channel_id
             .say(
-                &context.ctx,
+                context.ctx.http(),
                 "That topic is over 100 characters. Have you considered the benefits of conciseness?",
             )
             .await?;
         return Ok(());
     }
     // Check the channel's current title
-    let mut voice_channel =
-        if let Ok(Channel::Guild(channel)) = voice_channel_id.to_channel(&context.ctx).await {
-            channel
-        } else {
-            context
-                .msg
-                .channel_id
-                .say(
-                    &context.ctx,
-                    "I could not find the user topic voice channel :(",
-                )
-                .await?;
-            return Ok(());
-        };
-    let has_default_name = voice_channel.name()
+    let mut voice_channel = if let Ok(Channel::Guild(channel)) = voice_channel_id
+        .to_channel(&context.ctx, Some(GUILD_ID))
+        .await
+    {
+        channel
+    } else {
+        context
+            .msg
+            .channel_id
+            .say(
+                context.ctx.http(),
+                "I could not find the user topic voice channel :(",
+            )
+            .await?;
+        return Ok(());
+    };
+    let has_default_name = voice_channel.name
         == lib::tasks::user_topic_voice_channel::DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME;
-    let is_empty = voice_channel.members(&context.ctx)?.is_empty();
+    let is_empty = voice_channel.members(&context.ctx.cache)?.is_empty();
     if !has_default_name && !is_empty {
         // Someone is already using the voice channel
         context
             .msg
             .channel_id
             .say(
-                &context.ctx,
+                context.ctx.http(),
                 "Sorry but it seems there is already a topic going on. Try again when the voice channel is empty.",
             )
             .await?;
@@ -96,7 +102,7 @@ fn set_voice_topic<'a>(
     // We wrap this request in a timeout to not block on the rate limit.
     match tokio::time::timeout(
         Duration::from_secs(5),
-        voice_channel.edit(&context.ctx, EditChannel::new().name(topic)),
+        voice_channel.edit(context.ctx.http(), EditChannel::new().name(topic)),
     )
     .await
     {
@@ -106,7 +112,7 @@ fn set_voice_topic<'a>(
                 .msg
                 .channel_id
                 .say(
-                    &context.ctx,
+                    context.ctx.http(),
                     "Hold your horses. A topic was introduced recently. Please wait 10 minutes before changing it again.",
                 )
                 .await?;
@@ -117,7 +123,7 @@ fn set_voice_topic<'a>(
                 .msg
                 .channel_id
                 .say(
-                    &context.ctx,
+                    context.ctx.http(),
                     "There was an error renaming the voice channel :(",
                 )
                 .await?;
@@ -138,7 +144,7 @@ fn set_voice_topic<'a>(
         .msg
         .channel_id
         .say(
-            &context.ctx,
+            context.ctx.http(),
             format!("The voice channel is now yours! New topic: _{}_", topic),
         )
         .await?;

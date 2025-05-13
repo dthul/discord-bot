@@ -15,8 +15,8 @@ fn sync_meetup<'a>(
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
     // Send the syncing future to the executor
-    let pool = context.pool().await?;
-    let async_meetup_client = context.meetup_client().await?;
+    let pool = context.pool();
+    let async_meetup_client = context.meetup_client();
     let sync_task = {
         let task = async move {
             lib::meetup::sync::sync_task(async_meetup_client, &pool)
@@ -39,7 +39,7 @@ fn sync_meetup<'a>(
         .msg
         .channel_id
         .say(
-            &context.ctx,
+            &context.ctx.http,
             "Started asynchronous Meetup synchronization task",
         )
         .await

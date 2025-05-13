@@ -32,9 +32,9 @@ pub struct UserData {
     pub oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     pub stripe_client: Arc<stripe::Client>,
     pub shutdown_signal: Arc<AtomicBool>,
-    pub prepared_commands: Arc<PreparedCommands>,
+    pub(crate) prepared_commands: Arc<PreparedCommands>,
     pub spam_list: OnceLock<SpamList>,
-    pub games_list: RwLock<Arc<GameChannelsList>>,
+    pub(super) games_list: RwLock<Arc<GameChannelsList>>,
 }
 
 pub async fn create_discord_client(

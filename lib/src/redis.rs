@@ -64,7 +64,7 @@ impl<'a> Lock<'a> {
         while start.elapsed() < acquire_timeout {
             let was_set: u8 = redis_connection.set_nx(lockname, identifier)?;
             if was_set == 1 {
-                redis_connection.expire(lockname, lock_timeout.as_secs() as i64)?;
+                redis_connection.expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)?;
                 return Ok(Some(Lock {
                     redis_connection,
                     lockname,
@@ -76,7 +76,7 @@ impl<'a> Lock<'a> {
                 let current_timeout: isize = redis_connection.ttl(lockname)?;
                 if current_timeout < 0 {
                     // No timeout set: set it now
-                    redis_connection.expire(lockname, lock_timeout.as_secs() as i64)?;
+                    redis_connection.expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)?;
                 }
             }
             // Sleep for a moment and re-try
@@ -130,7 +130,7 @@ impl<'a> AsyncLock<'a> {
             let was_set: u8 = redis_connection.set_nx(lockname, identifier).await?;
             if was_set == 1 {
                 redis_connection
-                    .expire(lockname, lock_timeout.as_secs() as i64)
+                    .expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)
                     .await?;
                 return Ok(Some(AsyncLock {
                     redis_connection,
@@ -144,7 +144,7 @@ impl<'a> AsyncLock<'a> {
                 if current_timeout < 0 {
                     // No timeout set: set it now
                     redis_connection
-                        .expire(lockname, lock_timeout.as_secs() as i64)
+                        .expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)
                         .await?;
                 }
             }

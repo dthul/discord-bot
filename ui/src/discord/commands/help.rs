@@ -1,7 +1,7 @@
 use super::CommandLevel;
 use command_macro::command;
 use serenity::{
-    all::Mentionable,
+    all::{CacheHttp, Mentionable},
     builder::{CreateEmbed, CreateMessage},
     model::id::UserId,
 };
@@ -15,7 +15,7 @@ fn help<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let bot_id = context.bot_id().await?;
+    let bot_id = context.bot_id();
     let help_texts = compile_help_texts(bot_id);
     let is_bot_admin = context.is_admin().await.unwrap_or(false);
     let message_builder = CreateMessage::new()
@@ -29,7 +29,7 @@ fn help<'a>(
     context
         .msg
         .author
-        .direct_message(&context.ctx, message_builder)
+        .direct_message(context.ctx.http(), message_builder)
         .await
         .ok();
     let message_builder = CreateMessage::new().embed(
@@ -41,7 +41,7 @@ fn help<'a>(
     context
         .msg
         .author
-        .direct_message(&context.ctx, message_builder)
+        .direct_message(context.ctx.http(), message_builder)
         .await
         .ok();
     let message_builder = CreateMessage::new().embed(
@@ -54,7 +54,7 @@ fn help<'a>(
         context
             .msg
             .author
-            .direct_message(&context.ctx, message_builder)
+            .direct_message(context.ctx.http(), message_builder)
             .await
             .ok();
     }

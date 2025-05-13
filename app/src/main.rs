@@ -3,7 +3,6 @@
 
 use std::{
     env,
-    num::NonZeroU64,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -11,7 +10,6 @@ use std::{
 };
 
 use futures::future;
-use serenity::all::ApplicationId;
 use sqlx::{postgres::PgPoolOptions, Executor};
 
 fn main() {
@@ -128,20 +126,8 @@ fn main() {
         cache: bot.cache.clone().into(),
         http: bot.http.clone(),
     };
-    let bot_id = futures::executor::block_on(async {
-        bot.data()
-            .get::<ui::discord::bot::BotIdKey>()
-            .copied()
-            .expect("Bot ID was not set")
-    });
-    let bot_name = futures::executor::block_on(async {
-        bot.data()
-            .read()
-            .await
-            .get::<ui::discord::bot::BotNameKey>()
-            .expect("Bot name was not set")
-            .clone()
-    });
+    let bot_id = bot.data::<ui::discord::bot::UserData>().bot_id;
+    let bot_name = bot.data::<ui::discord::bot::UserData>().bot_name.clone();
 
     // Start a server to handle Meetup OAuth2 logins
     let port = if cfg!(feature = "bottest") {

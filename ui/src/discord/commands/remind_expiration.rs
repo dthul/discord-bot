@@ -11,8 +11,8 @@ fn remind_expiration<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let pool = context.pool().await?;
-    let bot_id = context.bot_id().await?;
+    let pool = context.pool();
+    let bot_id = context.bot_id();
     let mut discord_api: lib::discord::CacheAndHttp = (&context.ctx).into();
     // Spawn the end-of-game task
     tokio::spawn(async move {
