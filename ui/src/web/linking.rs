@@ -51,7 +51,7 @@ struct LinkingTemplate<'a> {
 }
 
 async fn generate_csrf_cookie(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     csrf_state: &str,
 ) -> Result<Cookie<'static>, lib::meetup::Error> {
     let random_csrf_user_id = lib::new_random_id(16);
@@ -68,7 +68,7 @@ async fn generate_csrf_cookie(
 }
 
 async fn check_csrf_cookie(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     headers: &hyper::HeaderMap<hyper::header::HeaderValue>,
     csrf_state: &str,
 ) -> Result<bool, lib::meetup::Error> {
@@ -100,7 +100,10 @@ async fn check_csrf_cookie(
 }
 
 async fn authorize_handler(Extension(state): Extension<Arc<State>>) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     // Generate the authorization URL to which we'll redirect the user.
     let (authorize_url, csrf_state) = state
         .oauth2_consumer
@@ -138,7 +141,7 @@ async fn authorize_redirect_handler(
     if let Some(error) = query.error {
         return Ok(("OAuth2 error", error).into());
     }
-    // let mut redis_connection = state.redis_client.get_async_connection().await?;
+    // let mut redis_connection = state.redis_client.get_multiplexed_async_connection().await?;
     // Compare the CSRF state that was returned by Meetup to the one
     // we have saved
     // let csrf_is_valid = check_csrf_cookie(&mut redis_connection, &headers, &query.state).await?;
@@ -206,7 +209,10 @@ async fn link_handler(
 ) -> Result<Response, WebError> {
     // The linking ID was stored in Redis when the linking link was created.
     // Check that it is still valid
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     let redis_key = format!("meetup_linking:{}:discord_user", linking_id);
     let mut pipe = redis::pipe();
     pipe.expire(&redis_key, 600).ignore().get(&redis_key);
@@ -266,7 +272,10 @@ async fn link_redirect_handler(
     Path(linking_id): Path<String>,
     Extension(with_rsvp_scope): Extension<WithRsvpScope>,
 ) -> Result<MessageTemplate, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     // The linking ID was stored in Redis when the linking link was created.
     // Check that it is still valid
     let redis_key = format!("meetup_linking:{}:discord_user", &linking_id);

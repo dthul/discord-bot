@@ -10,7 +10,7 @@ use crate::db;
 
 // TODO: move into flow?
 pub async fn generate_meetup_linking_link(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     discord_id: UserId,
 ) -> Result<String, super::Error> {
     let linking_id = crate::new_random_id(16);

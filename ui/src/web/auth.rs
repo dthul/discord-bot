@@ -35,7 +35,7 @@ pub fn create_routes() -> Router {
 // - possibly in the future: require 2FA for admins (like TOTP) for first login and if the last used time is older than a certain threshold (but not so old that it would count as expired)
 
 pub async fn generate_login_link(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     discord_id: UserId,
 ) -> Result<String, lib::meetup::Error> {
     let auth_id = lib::new_random_id(16);
@@ -69,7 +69,10 @@ async fn auth_handler_get(
     Path(auth_id): Path<String>,
     state: Extension<Arc<State>>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     let redis_key = format!("web_session_auth:{}:discord_user", &auth_id);
     // Check if this auth ID is valid
     let discord_id: Option<u64> = redis_connection.get(redis_key).await?;
@@ -90,7 +93,10 @@ async fn auth_handler_post(
     state: Extension<Arc<State>>,
     form: Form<AuthForm>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     let redis_key = format!("web_session_auth:{}:discord_user", form.auth_id);
     // This is a one-time use link. Expire it now.
     let mut pipe = redis::pipe();

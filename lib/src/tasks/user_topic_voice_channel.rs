@@ -18,7 +18,7 @@ pub async fn reset_user_topic_voice_channel_task(
     loop {
         // Wait for the next interval tick
         interval_timer.tick().await;
-        let mut redis_connection = match redis_client.get_async_connection().await {
+        let mut redis_connection = match redis_client.get_multiplexed_async_connection().await {
             Ok(con) => con,
             Err(err) => {
                 eprintln!(
@@ -37,7 +37,7 @@ pub async fn reset_user_topic_voice_channel_task(
 }
 
 async fn reset_user_topic_voice_channel(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     discord_api: &crate::discord::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Check if there is a user topic voice channel

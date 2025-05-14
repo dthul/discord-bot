@@ -68,7 +68,7 @@ lazy_static! {
 
 // Syncs Discord with the state of the database
 pub async fn sync_discord(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
     bot_id: UserId,
@@ -115,7 +115,7 @@ For each event series:
 */
 async fn sync_event_series(
     series_id: db::EventSeriesId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
     bot_id: UserId,
@@ -365,7 +365,7 @@ async fn sync_role(
     role_name: &str,
     is_host_role: bool,
     event_series: db::EventSeriesId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
@@ -432,7 +432,7 @@ async fn sync_role_impl(
     role_name: &str,
     is_host_role: bool,
     series_id: db::EventSeriesId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<RoleId, crate::meetup::Error> {
@@ -559,7 +559,7 @@ async fn sync_channel(
     channel_name: &str,
     event_series_id: db::EventSeriesId,
     bot_id: UserId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<ChannelId, crate::meetup::Error> {
@@ -637,7 +637,7 @@ async fn sync_channel_impl(
     channel_name: &str,
     event_series_id: db::EventSeriesId,
     bot_id: UserId,
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
 ) -> Result<ChannelId, crate::meetup::Error> {

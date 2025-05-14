@@ -111,7 +111,7 @@ pub struct CommandContext {
     pub msg: Message,
     // pub captures: regex::Captures<'a>,
     redis_client: OnceCell<redis::Client>,
-    async_redis_connection: OnceCell<redis::aio::Connection>,
+    async_redis_connection: OnceCell<redis::aio::MultiplexedConnection>,
     meetup_client: OnceCell<Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>>,
     oauth2_consumer: OnceCell<Arc<lib::meetup::oauth2::OAuth2Consumer>>,
     stripe_client: OnceCell<Arc<stripe::Client>>,
@@ -151,7 +151,7 @@ impl CommandContext {
 
     pub async fn async_redis_connection<'b>(
         &'b mut self,
-    ) -> Result<&'b mut redis::aio::Connection, lib::meetup::Error> {
+    ) -> Result<&'b mut redis::aio::MultiplexedConnection, lib::meetup::Error> {
         if self.async_redis_connection.get().is_some() {
             Ok(self
                 .async_redis_connection
@@ -159,7 +159,7 @@ impl CommandContext {
                 .expect("Async redis connection not set. This is a bug."))
         } else {
             let redis_client = self.redis_client().await?;
-            let async_redis_connection = redis_client.get_async_connection().await?;
+            let async_redis_connection = redis_client.get_multiplexed_async_connection().await?;
             self.async_redis_connection.set(async_redis_connection).ok();
             Ok(self
                 .async_redis_connection

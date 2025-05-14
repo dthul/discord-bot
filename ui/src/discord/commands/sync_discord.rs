@@ -8,7 +8,11 @@ fn sync_discord<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let mut redis_connection = context.redis_client().await?.get_async_connection().await?;
+    let mut redis_connection = context
+        .redis_client()
+        .await?
+        .get_multiplexed_async_connection()
+        .await?;
     let pool = context.pool().await?;
     let mut discord_api = (&context.ctx).into();
     let bot_id = context.bot_id().await?;
