@@ -1,12 +1,12 @@
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, OnceLock,
 };
 
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use serenity::{
-    all::{ApplicationId, GuildMemberUpdateEvent},
+    all::{Framework, FullEvent, GuildMemberUpdateEvent},
     async_trait,
     builder::CreateMessage,
     model::{
@@ -21,10 +21,24 @@ use serenity::{
 };
 
 use super::commands::{CommandContext, PreparedCommands};
+use super::spam::{GameChannelsList, SpamList};
+
+pub struct UserData {
+    pub bot_id: UserId,
+    pub bot_name: String,
+    pub async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
+    pub redis_client: redis::Client,
+    pub pool: sqlx::PgPool,
+    pub oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
+    pub stripe_client: Arc<stripe::Client>,
+    pub shutdown_signal: Arc<AtomicBool>,
+    pub(crate) prepared_commands: Arc<PreparedCommands>,
+    pub spam_list: OnceLock<SpamList>,
+    pub(super) games_list: RwLock<Arc<GameChannelsList>>,
+}
 
 pub async fn create_discord_client(
-    discord_token: &str,
-    application_id: ApplicationId,
+    discord_token: Token,
     redis_client: redis::Client,
     pool: sqlx::PgPool,
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
@@ -32,27 +46,10 @@ pub async fn create_discord_client(
     stripe_client: Arc<stripe::Client>,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<Client, lib::meetup::Error> {
-    // Create a new instance of the Client, logging in as a bot. This will
-    // automatically prepend your bot token with "Bot ", which is a requirement
-    // by Discord for bot users.
-    let client = Client::builder(
-        &discord_token,
-        GatewayIntents::GUILDS
-            | GatewayIntents::GUILD_MEMBERS
-            | GatewayIntents::GUILD_MESSAGES
-            | GatewayIntents::GUILD_MESSAGE_REACTIONS
-            | GatewayIntents::DIRECT_MESSAGES
-            | GatewayIntents::DIRECT_MESSAGE_REACTIONS
-            | GatewayIntents::GUILD_PRESENCES
-            | GatewayIntents::GUILD_VOICE_STATES,
-    )
-    .application_id(application_id)
-    .event_handler(Handler)
-    .await?;
+    let http = serenity::http::HttpBuilder::new(discord_token.clone()).build();
 
     // We will fetch the bot's id.
-    let (bot_id, bot_name) = client
-        .http
+    let (bot_id, bot_name) = http
         .get_current_user()
         .await
         .map(|info| (info.id, info.name.clone()))?;
@@ -62,66 +59,37 @@ pub async fn create_discord_client(
     // Prepare the commands
     let prepared_commands = Arc::new(super::commands::prepare_commands(bot_id, &bot_name)?);
 
-    // Store the data to be shared by command invocations
-    {
-        let mut data = client.data.write().await;
-        data.insert::<BotIdKey>(bot_id);
-        data.insert::<BotNameKey>(bot_name);
-        data.insert::<AsyncMeetupClientKey>(async_meetup_client);
-        data.insert::<RedisClientKey>(redis_client);
-        data.insert::<PoolKey>(pool);
-        data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
-        data.insert::<StripeClientKey>(stripe_client);
-        data.insert::<ShutdownSignalKey>(shutdown_signal);
-        data.insert::<PreparedCommandsKey>(prepared_commands);
-    }
+    // Create a new instance of the Client, logging in as a bot. This will
+    // automatically prepend your bot token with "Bot ", which is a requirement
+    // by Discord for bot users.
+    let client = Client::builder(
+        discord_token,
+        GatewayIntents::GUILDS
+            | GatewayIntents::GUILD_MEMBERS
+            | GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::GUILD_MESSAGE_REACTIONS
+            | GatewayIntents::DIRECT_MESSAGES
+            | GatewayIntents::DIRECT_MESSAGE_REACTIONS
+            | GatewayIntents::GUILD_PRESENCES
+            | GatewayIntents::GUILD_VOICE_STATES,
+    )
+    .event_handler(Handler)
+    .data(Arc::new(UserData {
+        bot_id: bot_id,
+        bot_name: bot_name.into(),
+        async_meetup_client: async_meetup_client,
+        redis_client: redis_client,
+        pool: pool,
+        oauth2_consumer: oauth2_consumer,
+        stripe_client: stripe_client,
+        shutdown_signal: shutdown_signal,
+        prepared_commands: prepared_commands,
+        spam_list: Default::default(),
+        games_list: Default::default(),
+    }))
+    .await?;
 
     Ok(client)
-}
-
-pub struct BotIdKey;
-impl TypeMapKey for BotIdKey {
-    type Value = UserId;
-}
-
-pub struct BotNameKey;
-impl TypeMapKey for BotNameKey {
-    type Value = String;
-}
-
-pub struct AsyncMeetupClientKey;
-impl TypeMapKey for AsyncMeetupClientKey {
-    type Value = Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>;
-}
-
-pub struct RedisClientKey;
-impl TypeMapKey for RedisClientKey {
-    type Value = redis::Client;
-}
-
-pub struct OAuth2ConsumerKey;
-impl TypeMapKey for OAuth2ConsumerKey {
-    type Value = Arc<lib::meetup::oauth2::OAuth2Consumer>;
-}
-
-pub struct StripeClientKey;
-impl TypeMapKey for StripeClientKey {
-    type Value = Arc<stripe::Client>;
-}
-
-pub struct ShutdownSignalKey;
-impl TypeMapKey for ShutdownSignalKey {
-    type Value = Arc<AtomicBool>;
-}
-
-pub(crate) struct PreparedCommandsKey;
-impl TypeMapKey for PreparedCommandsKey {
-    type Value = Arc<PreparedCommands>;
-}
-
-pub(crate) struct PoolKey;
-impl TypeMapKey for PoolKey {
-    type Value = sqlx::PgPool;
 }
 
 pub struct Handler;
@@ -137,7 +105,6 @@ impl Handler {
             .matches(&cmdctx.msg.content)
             .into_iter()
             .collect();
-        let bot_id = cmdctx.bot_id().await?;
         let i = match matches.as_slice() {
             [] => {
                 // unknown command
@@ -145,7 +112,7 @@ impl Handler {
                 cmdctx
                     .msg
                     .channel_id
-                    .say(&cmdctx.ctx, strings::INVALID_COMMAND(bot_id))
+                    .say(&cmdctx.ctx.http, strings::INVALID_COMMAND(cmdctx.bot_id()))
                     .await
                     .ok();
                 return Ok(());
@@ -158,7 +125,7 @@ impl Handler {
                     &cmdctx.msg.content, l
                 );
                 let _ = cmdctx.msg.channel_id.say(
-                    &cmdctx.ctx,
+                    &cmdctx.ctx.http,
                     "I can't figure out what to do. This is a bug. Could you please let a bot \
                      admin know about this?",
                 );
@@ -174,7 +141,7 @@ impl Handler {
                 // This should not happen
                 eprintln!("Unmatcheable command: {}", &message_content);
                 let _ = cmdctx.msg.channel_id.say(
-                    &cmdctx.ctx,
+                    &cmdctx.ctx.http,
                     "I can't parse your command. This is a bug. Could you please let a bot admin \
                      know about this?",
                 );
@@ -190,7 +157,7 @@ impl Handler {
                     cmdctx
                         .msg
                         .channel_id
-                        .say(&cmdctx.ctx, strings::NOT_A_BOT_ADMIN)
+                        .say(&cmdctx.ctx.http, strings::NOT_A_BOT_ADMIN)
                         .await
                         .ok();
                     return Ok(());
@@ -203,7 +170,7 @@ impl Handler {
                     cmdctx
                         .msg
                         .channel_id
-                        .say(&cmdctx.ctx, strings::NOT_A_CHANNEL_ADMIN)
+                        .say(&cmdctx.ctx.http, strings::NOT_A_CHANNEL_ADMIN)
                         .await
                         .ok();
                     return Ok(());
@@ -214,25 +181,18 @@ impl Handler {
         (command.fun)(cmdctx, captures).await?;
         Ok(())
     }
-}
 
-#[async_trait]
-impl EventHandler for Handler {
     // Set a handler for the `message` event - so that whenever a new message
     // is received - the closure (or function) passed will be called.
     //
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     async fn message(&self, ctx: Context, msg: Message) {
-        let (bot_id, shutdown_signal) = {
-            let data = ctx.data.read().await;
-            let bot_id = data.get::<BotIdKey>().expect("Bot ID was not set").clone();
-            let shutdown_signal = data
-                .get::<ShutdownSignalKey>()
-                .expect("Shutdown signal was not set")
-                .load(Ordering::Acquire);
-            (bot_id, shutdown_signal)
-        };
+        let bot_id = ctx.data::<UserData>().bot_id;
+        let shutdown_signal = ctx
+            .data::<UserData>()
+            .shutdown_signal
+            .load(Ordering::Acquire);
         // Ignore all messages written by the bot itself
         if msg.author.id == bot_id {
             return;
@@ -245,13 +205,7 @@ impl EventHandler for Handler {
             }
         }
         // Get the prepared commands
-        let commands = ctx
-            .data
-            .read()
-            .await
-            .get::<PreparedCommandsKey>()
-            .cloned()
-            .expect("Prepared commands have not been set");
+        let commands = ctx.data::<UserData>().prepared_commands.clone();
         // Wrap Serenity's context and message objects into a CommandContext
         // for access to convenience functions.
         let mut cmdctx = CommandContext::new(ctx, msg);
@@ -266,7 +220,7 @@ impl EventHandler for Handler {
                 cmdctx
                     .msg
                     .channel_id
-                    .say(&cmdctx.ctx, lib::strings::UNSPECIFIED_ERROR)
+                    .say(&cmdctx.ctx.http, lib::strings::UNSPECIFIED_ERROR)
                     .await
                     .ok();
                 return;
@@ -285,7 +239,7 @@ impl EventHandler for Handler {
         }
         if shutdown_signal {
             let _ = cmdctx.msg.channel_id.say(
-                &cmdctx.ctx,
+                &cmdctx.ctx.http,
                 "Sorry, I can not help you right now. I am about to shut down!",
             );
             return;
@@ -297,7 +251,7 @@ impl EventHandler for Handler {
             let _ = cmdctx
                 .msg
                 .channel_id
-                .say(&cmdctx.ctx, lib::strings::UNSPECIFIED_ERROR);
+                .say(&cmdctx.ctx.http, lib::strings::UNSPECIFIED_ERROR);
         }
     }
 
@@ -340,7 +294,7 @@ impl EventHandler for Handler {
 
     async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
         let guild_id = match guilds.as_slice() {
-            [guild] => guild,
+            [guild] => *guild,
             _ => {
                 eprintln!("cache_ready event received not exactly one guild");
                 return;
@@ -351,9 +305,11 @@ impl EventHandler for Handler {
             None => return,
         };
         println!("Updating {} cached member nicks", members.len());
-        for (user_id, member) in members {
+        for member in members {
             let nick = member.nick.as_deref().unwrap_or(member.user.name.as_str());
-            Self::update_member_nick(&ctx, user_id, nick).await.ok();
+            Self::update_member_nick(&ctx, member.user.id, nick)
+                .await
+                .ok();
         }
     }
 
@@ -383,21 +339,21 @@ impl EventHandler for Handler {
             "link-meetup" => {
                 interaction
                     .channel_id
-                    .say(&ctx, "Yessir! Linking Meetup")
+                    .say(ctx.http(), "Yessir! Linking Meetup")
                     .await
                     .ok();
             }
             "unlink-meetup" => {
                 interaction
                     .channel_id
-                    .say(&ctx, "Un-linking Meetup")
+                    .say(ctx.http(), "Un-linking Meetup")
                     .await
                     .ok();
             }
             _ => {
                 interaction
                     .channel_id
-                    .say(&ctx, "Unknown command")
+                    .say(ctx.http(), "Unknown command")
                     .await
                     .ok();
             }
@@ -405,11 +361,19 @@ impl EventHandler for Handler {
     }
 }
 
+#[async_trait]
+impl Framework for Handler {
+    async fn dispatch(&self, ctx: &Context, event: &FullEvent) {}
+}
+
 impl Handler {
     async fn send_welcome_message(ctx: &Context, user: &User) {
-        user.direct_message(ctx, CreateMessage::new().content(strings::WELCOME_MESSAGE))
-            .await
-            .ok();
+        user.direct_message(
+            &ctx.http,
+            CreateMessage::new().content(strings::WELCOME_MESSAGE),
+        )
+        .await
+        .ok();
     }
 
     async fn update_member_nick(
@@ -417,12 +381,7 @@ impl Handler {
         discord_id: UserId,
         nick: &str,
     ) -> Result<(), lib::meetup::Error> {
-        let pool = {
-            let data = ctx.data.read().await;
-            data.get::<super::bot::PoolKey>()
-                .cloned()
-                .ok_or_else(|| simple_error::SimpleError::new("Postgres pool was not set"))?
-        };
+        let pool = ctx.data::<UserData>().pool.clone();
         let mut tx = pool.begin().await?;
         let member_id = lib::db::get_or_create_member_for_discord_id(&mut tx, discord_id).await?;
         sqlx::query!(

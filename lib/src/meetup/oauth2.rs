@@ -1,5 +1,6 @@
 use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl,
+    TokenResponse, TokenUrl,
 };
 use redis::AsyncCommands;
 use serenity::model::id::UserId;
@@ -10,7 +11,7 @@ use crate::db;
 
 // TODO: move into flow?
 pub async fn generate_meetup_linking_link(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     discord_id: UserId,
 ) -> Result<String, super::Error> {
     let linking_id = crate::new_random_id(16);
@@ -26,10 +27,14 @@ pub async fn generate_meetup_linking_link(
     return Ok(format!("{}/link/{}", crate::urls::BASE_URL, &linking_id));
 }
 
+type OAuth2Client =
+    BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
+
 #[derive(Clone)]
 pub struct OAuth2Consumer {
-    pub authorization_client: Arc<BasicClient>,
-    pub link_client: Arc<BasicClient>,
+    pub authorization_client: Arc<OAuth2Client>,
+    pub link_client: Arc<OAuth2Client>,
+    pub http_client: oauth2::reqwest::Client,
 }
 
 impl OAuth2Consumer {
@@ -43,17 +48,15 @@ impl OAuth2Consumer {
         let token_url = TokenUrl::new(crate::urls::MEETUP_OAUTH2_TOKEN_URL.to_string())?;
 
         // Set up the config for the Github OAuth2 process.
-        let authorization_client = BasicClient::new(
-            meetup_client_id,
-            Some(meetup_client_secret),
-            auth_url,
-            Some(token_url),
-        )
-        .set_auth_type(oauth2::AuthType::RequestBody)
-        .set_redirect_uri(RedirectUrl::new(format!(
-            "{}/authorize/redirect",
-            crate::urls::BASE_URL
-        ))?);
+        let authorization_client = BasicClient::new(meetup_client_id)
+            .set_client_secret(meetup_client_secret)
+            .set_auth_uri(auth_url)
+            .set_token_uri(token_url)
+            .set_auth_type(oauth2::AuthType::RequestBody)
+            .set_redirect_uri(RedirectUrl::new(format!(
+                "{}/authorize/redirect",
+                crate::urls::BASE_URL
+            ))?);
         let link_client = authorization_client
             .clone()
             .set_redirect_uri(RedirectUrl::new(format!(
@@ -66,6 +69,9 @@ impl OAuth2Consumer {
         Ok(OAuth2Consumer {
             authorization_client: authorization_client,
             link_client: link_client,
+            http_client: oauth2::reqwest::Client::builder()
+                .redirect(oauth2::reqwest::redirect::Policy::none())
+                .build()?,
         })
     }
 
@@ -74,7 +80,13 @@ impl OAuth2Consumer {
         token_type: TokenType,
         db_connection: &sqlx::PgPool,
     ) -> Result<oauth2::AccessToken, super::Error> {
-        refresh_oauth_tokens(token_type, &self.authorization_client, db_connection).await
+        refresh_oauth_tokens(
+            token_type,
+            &self.authorization_client,
+            &self.http_client,
+            db_connection,
+        )
+        .await
     }
 }
 
@@ -85,7 +97,8 @@ pub enum TokenType {
 
 pub async fn refresh_oauth_tokens(
     token_type: TokenType,
-    oauth2_client: &BasicClient,
+    oauth2_client: &OAuth2Client,
+    http_client: &oauth2::reqwest::Client,
     db_connection: &sqlx::PgPool,
 ) -> Result<oauth2::AccessToken, super::Error> {
     // Try to get the refresh token from the database and lock the row
@@ -119,7 +132,7 @@ pub async fn refresh_oauth_tokens(
     let refresh_token = oauth2::RefreshToken::new(refresh_token);
     let refresh_token_response = oauth2_client
         .exchange_refresh_token(&refresh_token)
-        .request_async(oauth2::reqwest::async_http_client)
+        .request_async(http_client)
         .await?;
     // Store the new tokens
     match token_type {

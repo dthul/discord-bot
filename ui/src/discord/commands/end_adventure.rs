@@ -1,6 +1,6 @@
 use command_macro::command;
 use lib::end_adventure::EndAdventureResult;
-use serenity::model::channel::Channel;
+use serenity::{all::CacheHttp, model::channel::Channel};
 
 #[command]
 #[regex(r"end\s*adventure")]
@@ -14,7 +14,7 @@ fn end_adventure<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     let end_adventure_result =
         lib::end_adventure::end_adventure(context.msg.channel_id, &mut tx).await?;
@@ -23,26 +23,26 @@ fn end_adventure<'a>(
         EndAdventureResult::NotAGameChannel => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+            .say(context.ctx.http(), lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
             .await
             .ok(),
         EndAdventureResult::NoExpirationTime => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NO_EXPIRATION)
+            .say(context.ctx.http(), lib::strings::CHANNEL_NO_EXPIRATION)
             .await
             .ok(),
         EndAdventureResult::NotYetExpired => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NOT_YET_CLOSEABLE)
+            .say(context.ctx.http(), lib::strings::CHANNEL_NOT_YET_CLOSEABLE)
             .await
             .ok(),
         EndAdventureResult::AlreadyMarkedForDeletion(_) => context
             .msg
             .channel_id
             .say(
-                &context.ctx,
+                context.ctx.http(),
                 lib::strings::CHANNEL_ALREADY_MARKED_FOR_CLOSING,
             )
             .await
@@ -50,7 +50,7 @@ fn end_adventure<'a>(
         EndAdventureResult::NewlyMarkedForDeletion(_) => context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
+            .say(context.ctx.http(), lib::strings::CHANNEL_MARKED_FOR_CLOSING)
             .await
             .ok(),
     };
@@ -62,7 +62,7 @@ fn end_adventure<'a>(
     if let Some(bot_alerts_channel_id) = lib::discord::sync::ids::BOT_ALERTS_CHANNEL_ID {
         bot_alerts_channel_id
             .say(
-                &context.ctx,
+                context.ctx.http(),
                 lib::strings::CHANNEL_MARKED_FOR_CLOSING_ALERT(
                     context.msg.channel_id,
                     channel_name,

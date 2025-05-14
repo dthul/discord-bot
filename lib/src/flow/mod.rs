@@ -11,7 +11,7 @@ pub struct ScheduleSessionFlow {
 
 impl ScheduleSessionFlow {
     pub async fn new(
-        redis_connection: &mut redis::aio::Connection,
+        redis_connection: &mut redis::aio::MultiplexedConnection,
         event_series_id: db::EventSeriesId,
     ) -> Result<Self, crate::meetup::Error> {
         let id: u64 = rand::thread_rng().gen();
@@ -30,7 +30,7 @@ impl ScheduleSessionFlow {
     }
 
     pub async fn retrieve(
-        redis_connection: &mut redis::aio::Connection,
+        redis_connection: &mut redis::aio::MultiplexedConnection,
         id: u64,
     ) -> Result<Option<Self>, crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", id);
@@ -46,7 +46,7 @@ impl ScheduleSessionFlow {
     pub async fn schedule<'a>(
         self,
         db_connection: sqlx::PgPool,
-        mut redis_connection: redis::aio::Connection,
+        mut redis_connection: redis::aio::MultiplexedConnection,
         meetup_client: &'a crate::meetup::newapi::AsyncClient,
         // oauth2_consumer: &'a crate::meetup::oauth2::OAuth2Consumer,
         date_time: chrono::DateTime<chrono::Utc>,
@@ -136,7 +136,7 @@ impl ScheduleSessionFlow {
 
     pub async fn delete(
         self,
-        redis_connection: &mut redis::aio::Connection,
+        redis_connection: &mut redis::aio::MultiplexedConnection,
     ) -> Result<(), crate::meetup::Error> {
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let () = redis_connection.del(&redis_key).await?;

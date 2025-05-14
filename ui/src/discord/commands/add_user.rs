@@ -1,10 +1,9 @@
-use std::num::NonZeroU64;
-
 use command_macro::command;
 use lib::discord::CacheAndHttp;
 use serenity::{
     all::Mentionable,
     model::{channel::PermissionOverwriteType, id::UserId, permissions::Permissions},
+    nonmax::NonMaxU64,
 };
 
 #[command]
@@ -22,13 +21,16 @@ fn add_user<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD)
+                .say(
+                    &context.ctx.http,
+                    lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD,
+                )
                 .await
                 .ok();
             return Ok(());
@@ -55,13 +57,16 @@ fn add_host<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD)
+                .say(
+                    &context.ctx.http,
+                    lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD,
+                )
                 .await
                 .ok();
             return Ok(());
@@ -88,13 +93,16 @@ fn remove_user<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD)
+                .say(
+                    &context.ctx.http,
+                    lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD,
+                )
                 .await
                 .ok();
             return Ok(());
@@ -121,13 +129,16 @@ fn remove_host<'a>(
     // be added to the channel
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
-        Ok(id) => UserId::from(id),
+    let discord_id = match discord_id.parse::<NonMaxU64>() {
+        Ok(id) => UserId::from(id.get()),
         _ => {
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD)
+                .say(
+                    &context.ctx.http,
+                    lib::strings::CHANNEL_ADD_USER_INVALID_DISCORD,
+                )
                 .await
                 .ok();
             return Ok(());
@@ -154,14 +165,14 @@ async fn channel_add_or_remove_user_impl(
         context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::NOT_A_BOT_ADMIN)
+            .say(&context.ctx.http, lib::strings::NOT_A_BOT_ADMIN)
             .await
             .ok();
         return Ok(());
     }
     // Managed channels and hosts don't use roles but user-specific permission overwrites
     let discord_api: CacheAndHttp = Into::into(&context.ctx);
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     if is_game_channel && !is_managed_channel {
         let channel_roles = lib::get_channel_roles(context.msg.channel_id, &mut tx).await?;
@@ -171,7 +182,7 @@ async fn channel_add_or_remove_user_impl(
                 context
                     .msg
                     .channel_id
-                    .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+                    .say(&context.ctx.http, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
                     .await
                     .ok();
                 return Ok(());
@@ -182,7 +193,7 @@ async fn channel_add_or_remove_user_impl(
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, lib::strings::NOT_A_BOT_ADMIN)
+                .say(&context.ctx.http, lib::strings::NOT_A_BOT_ADMIN)
                 .await
                 .ok();
             return Ok(());
@@ -213,11 +224,14 @@ async fn channel_add_or_remove_user_impl(
                 .await
             {
                 Ok(()) => {
-                    context.msg.react(&context.ctx, '\u{2705}').await.ok();
+                    context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
                     context
                         .msg
                         .channel_id
-                        .say(&context.ctx, format!("Welcome {}!", discord_id.mention()))
+                        .say(
+                            &context.ctx.http,
+                            format!("Welcome {}!", discord_id.mention()),
+                        )
                         .await
                         .ok();
                 }
@@ -226,7 +240,7 @@ async fn channel_add_or_remove_user_impl(
                     context
                         .msg
                         .channel_id
-                        .say(&context.ctx, lib::strings::CHANNEL_ROLE_ADD_ERROR)
+                        .say(&context.ctx.http, lib::strings::CHANNEL_ROLE_ADD_ERROR)
                         .await
                         .ok();
                 }
@@ -250,7 +264,7 @@ async fn channel_add_or_remove_user_impl(
                             .msg
                             .channel_id
                             .say(
-                                &context.ctx,
+                                &context.ctx.http,
                                 "Something went wrong assigning the channel permissions",
                             )
                             .await
@@ -261,7 +275,7 @@ async fn channel_add_or_remove_user_impl(
                             .msg
                             .channel_id
                             .say(
-                                &context.ctx,
+                                &context.ctx.http,
                                 lib::strings::CHANNEL_ADDED_NEW_HOST(discord_id),
                             )
                             .await
@@ -290,7 +304,7 @@ async fn channel_add_or_remove_user_impl(
                             .msg
                             .channel_id
                             .say(
-                                &context.ctx,
+                                &context.ctx.http,
                                 "Something went wrong assigning the voice channel permissions",
                             )
                             .await
@@ -316,7 +330,7 @@ async fn channel_add_or_remove_user_impl(
                     context
                         .msg
                         .channel_id
-                        .say(&context.ctx, lib::strings::CHANNEL_ROLE_REMOVE_ERROR)
+                        .say(&context.ctx.http, lib::strings::CHANNEL_ROLE_REMOVE_ERROR)
                         .await
                         .ok();
                 }
@@ -338,7 +352,7 @@ async fn channel_add_or_remove_user_impl(
                         .msg
                         .channel_id
                         .say(
-                            &context.ctx,
+                            &context.ctx.http,
                             "Something went wrong reducing the channel permissions",
                         )
                         .await
@@ -363,7 +377,7 @@ async fn channel_add_or_remove_user_impl(
                             .msg
                             .channel_id
                             .say(
-                                &context.ctx,
+                                &context.ctx.http,
                                 "Something went wrong reducing the voice channel permissions",
                             )
                             .await
@@ -376,7 +390,11 @@ async fn channel_add_or_remove_user_impl(
                 if let Err(err) = context
                     .msg
                     .channel_id
-                    .delete_permission(&context.ctx, PermissionOverwriteType::Member(discord_id))
+                    .delete_permission(
+                        &context.ctx.http,
+                        PermissionOverwriteType::Member(discord_id),
+                        None,
+                    )
                     .await
                 {
                     eprintln!("Could not remove channel permissions:\n{:#?}", err);
@@ -384,7 +402,7 @@ async fn channel_add_or_remove_user_impl(
                         .msg
                         .channel_id
                         .say(
-                            &context.ctx,
+                            &context.ctx.http,
                             "Something went wrong revoking the channel permissions",
                         )
                         .await
@@ -394,8 +412,9 @@ async fn channel_add_or_remove_user_impl(
                 if let Some(voice_channel_id) = voice_channel_id {
                     if let Err(err) = voice_channel_id
                         .delete_permission(
-                            &context.ctx,
+                            &context.ctx.http,
                             PermissionOverwriteType::Member(discord_id),
+                            None,
                         )
                         .await
                     {
@@ -404,7 +423,7 @@ async fn channel_add_or_remove_user_impl(
                             .msg
                             .channel_id
                             .say(
-                                &context.ctx,
+                                &context.ctx.http,
                                 "Something went wrong revoking the voice channel permissions",
                             )
                             .await
@@ -427,14 +446,14 @@ async fn channel_add_or_remove_user_impl(
                         context
                             .msg
                             .channel_id
-                            .say(&context.ctx, lib::strings::CHANNEL_ROLE_REMOVE_ERROR)
+                            .say(&context.ctx.http, lib::strings::CHANNEL_ROLE_REMOVE_ERROR)
                             .await
                             .ok();
                     }
                     _ => (),
                 }
             }
-            context.msg.react(&context.ctx, '\u{2705}').await.ok();
+            context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
             // Remember which users were removed manually
             let series_id = lib::get_channel_series(context.msg.channel_id, &mut tx).await?;
             match series_id {
@@ -487,11 +506,14 @@ async fn channel_add_or_remove_user_impl(
                 context
                     .msg
                     .channel_id
-                    .say(&context.ctx, format!("Welcome {}!", discord_id.mention()))
+                    .say(
+                        &context.ctx.http,
+                        format!("Welcome {}!", discord_id.mention()),
+                    )
                     .await
                     .ok();
             }
-            context.msg.react(&context.ctx, '\u{2705}').await.ok();
+            context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
         } else {
             // Assume that users with the VIEW_CHANNEL, MANAGE_MESSAGES and
             // MENTION_EVERYONE permission are channel hosts
@@ -502,7 +524,7 @@ async fn channel_add_or_remove_user_impl(
                 context
                     .msg
                     .channel_id
-                    .say(&context.ctx, lib::strings::NOT_A_BOT_ADMIN)
+                    .say(&context.ctx.http, lib::strings::NOT_A_BOT_ADMIN)
                     .await
                     .ok();
                 return Ok(());
@@ -523,7 +545,7 @@ async fn channel_add_or_remove_user_impl(
                 permissions_to_remove,
             )
             .await?;
-            context.msg.react(&context.ctx, '\u{2705}').await.ok();
+            context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
         }
     }
     Ok(())

@@ -2,12 +2,12 @@ use std::{ops::Deref, sync::Arc};
 
 use axum::{
     body::Bytes,
-    extract::{DefaultBodyLimit, Extension, TypedHeader},
-    headers::Header,
+    extract::{DefaultBodyLimit, Extension},
     http::StatusCode,
     routing::post,
     Router,
 };
+use axum_extra::{headers::Header, TypedHeader};
 use lazy_static::lazy_static;
 
 use super::server::State;
@@ -22,8 +22,8 @@ pub fn create_routes() -> Router {
 struct StripeSignatureHeader(String);
 
 lazy_static! {
-    static ref STRIPE_SIGNATURE_HEADER: axum::headers::HeaderName =
-        axum::headers::HeaderName::from_lowercase(b"stripe-signature").unwrap();
+    static ref STRIPE_SIGNATURE_HEADER: axum_extra::headers::HeaderName =
+        axum_extra::headers::HeaderName::from_lowercase(b"stripe-signature").unwrap();
 }
 
 impl Deref for StripeSignatureHeader {
@@ -35,24 +35,26 @@ impl Deref for StripeSignatureHeader {
 }
 
 impl Header for StripeSignatureHeader {
-    fn name() -> &'static axum::headers::HeaderName {
+    fn name() -> &'static axum_extra::headers::HeaderName {
         &STRIPE_SIGNATURE_HEADER
     }
 
-    fn decode<'i, I>(values: &mut I) -> Result<Self, axum::headers::Error>
+    fn decode<'i, I>(values: &mut I) -> Result<Self, axum_extra::headers::Error>
     where
         Self: Sized,
-        I: Iterator<Item = &'i axum::headers::HeaderValue>,
+        I: Iterator<Item = &'i axum_extra::headers::HeaderValue>,
     {
-        let value = values.next().ok_or_else(axum::headers::Error::invalid)?;
+        let value = values
+            .next()
+            .ok_or_else(axum_extra::headers::Error::invalid)?;
         let value = value
             .to_str()
-            .map_err(|_| axum::headers::Error::invalid())?;
+            .map_err(|_| axum_extra::headers::Error::invalid())?;
         Ok(StripeSignatureHeader(value.into()))
     }
 
-    fn encode<E: Extend<axum::headers::HeaderValue>>(&self, values: &mut E) {
-        match axum::headers::HeaderValue::from_str(&self.0) {
+    fn encode<E: Extend<axum_extra::headers::HeaderValue>>(&self, values: &mut E) {
+        match axum_extra::headers::HeaderValue::from_str(&self.0) {
             Ok(header_value) => values.extend(Some(header_value)),
             Err(err) => eprintln!("Failed to encode Stripe-Signature HTTP header: {:#?}", err),
         }

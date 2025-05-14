@@ -11,6 +11,8 @@ use serenity::{
     prelude::*,
 };
 
+use super::bot::UserData;
+
 mod add_user;
 // mod clone_event;
 mod count_inactive;
@@ -109,15 +111,8 @@ pub(crate) struct HelpEntry {
 pub struct CommandContext {
     pub ctx: Context,
     pub msg: Message,
-    // pub captures: regex::Captures<'a>,
-    redis_client: OnceCell<redis::Client>,
-    async_redis_connection: OnceCell<redis::aio::Connection>,
-    meetup_client: OnceCell<Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>>,
-    oauth2_consumer: OnceCell<Arc<lib::meetup::oauth2::OAuth2Consumer>>,
-    stripe_client: OnceCell<Arc<stripe::Client>>,
-    bot_id: OnceCell<UserId>,
+    async_redis_connection: OnceCell<redis::aio::MultiplexedConnection>,
     channel: OnceCell<Channel>,
-    pool: OnceCell<sqlx::PgPool>,
 }
 
 impl CommandContext {
@@ -125,41 +120,28 @@ impl CommandContext {
         CommandContext {
             ctx,
             msg,
-            redis_client: OnceCell::new(),
             async_redis_connection: OnceCell::new(),
-            meetup_client: OnceCell::new(),
-            oauth2_consumer: OnceCell::new(),
-            stripe_client: OnceCell::new(),
-            bot_id: OnceCell::new(),
             channel: OnceCell::new(),
-            pool: OnceCell::new(),
         }
     }
 
-    pub async fn redis_client(&self) -> Result<redis::Client, lib::meetup::Error> {
-        if let Some(client) = self.redis_client.get() {
-            Ok(client.clone())
-        } else {
-            let data = self.ctx.data.read().await;
-            let client = data
-                .get::<super::bot::RedisClientKey>()
-                .cloned()
-                .ok_or_else(|| simple_error::SimpleError::new("Redis client was not set"))?;
-            Ok(self.redis_client.get_or_init(move || client).clone())
-        }
+    pub fn redis_client(&self) -> redis::Client {
+        self.ctx.data::<UserData>().redis_client.clone()
     }
 
     pub async fn async_redis_connection<'b>(
         &'b mut self,
-    ) -> Result<&'b mut redis::aio::Connection, lib::meetup::Error> {
+    ) -> Result<&'b mut redis::aio::MultiplexedConnection, lib::meetup::Error> {
         if self.async_redis_connection.get().is_some() {
             Ok(self
                 .async_redis_connection
                 .get_mut()
                 .expect("Async redis connection not set. This is a bug."))
         } else {
-            let redis_client = self.redis_client().await?;
-            let async_redis_connection = redis_client.get_async_connection().await?;
+            let async_redis_connection = self
+                .redis_client()
+                .get_multiplexed_async_connection()
+                .await?;
             self.async_redis_connection.set(async_redis_connection).ok();
             Ok(self
                 .async_redis_connection
@@ -168,109 +150,31 @@ impl CommandContext {
         }
     }
 
-    pub async fn pool(&self) -> Result<sqlx::PgPool, lib::meetup::Error> {
-        if let Some(pool) = self.pool.get() {
-            Ok(pool.clone())
-        } else {
-            let data = self.ctx.data.read().await;
-            let pool = data
-                .get::<super::bot::PoolKey>()
-                .cloned()
-                .ok_or_else(|| simple_error::SimpleError::new("Postgres pool was not set"))?;
-            Ok(self.pool.get_or_init(move || pool).clone())
-        }
+    pub fn pool(&self) -> sqlx::PgPool {
+        self.ctx.data::<UserData>().pool.clone()
     }
 
-    pub async fn meetup_client(
-        &self,
-    ) -> Result<Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>, lib::meetup::Error>
-    {
-        if let Some(client) = self.meetup_client.get() {
-            Ok(Arc::clone(client))
-        } else {
-            let client = self
-                .ctx
-                .data
-                .read()
-                .await
-                .get::<super::bot::AsyncMeetupClientKey>()
-                .cloned()
-                .ok_or_else(|| simple_error::SimpleError::new("Meetup client was not set"))?;
-            self.meetup_client.set(client).ok();
-            Ok(self
-                .meetup_client
-                .get()
-                .map(Arc::clone)
-                .expect("Meetup client not set. This is a bug."))
-        }
+    pub fn meetup_client(&self) -> Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>> {
+        self.ctx.data::<UserData>().async_meetup_client.clone()
     }
 
-    pub async fn oauth2_consumer(
-        &self,
-    ) -> Result<Arc<lib::meetup::oauth2::OAuth2Consumer>, lib::meetup::Error> {
-        if let Some(consumer) = self.oauth2_consumer.get() {
-            Ok(Arc::clone(consumer))
-        } else {
-            let consumer = self
-                .ctx
-                .data
-                .read()
-                .await
-                .get::<super::bot::OAuth2ConsumerKey>()
-                .cloned()
-                .ok_or_else(|| simple_error::SimpleError::new("OAuth2 consumer was not set"))?;
-            self.oauth2_consumer.set(consumer).ok();
-            Ok(self
-                .oauth2_consumer
-                .get()
-                .map(Arc::clone)
-                .expect("OAuth2 consumer not set. This is a bug."))
-        }
+    pub fn oauth2_consumer(&self) -> Arc<lib::meetup::oauth2::OAuth2Consumer> {
+        self.ctx.data::<UserData>().oauth2_consumer.clone()
     }
 
-    pub async fn stripe_client(&self) -> Result<Arc<stripe::Client>, lib::meetup::Error> {
-        if let Some(client) = self.stripe_client.get() {
-            Ok(Arc::clone(client))
-        } else {
-            let client = self
-                .ctx
-                .data
-                .read()
-                .await
-                .get::<super::bot::StripeClientKey>()
-                .cloned()
-                .ok_or_else(|| simple_error::SimpleError::new("Stripe client was not set"))?;
-            self.stripe_client.set(client).ok();
-            Ok(self
-                .stripe_client
-                .get()
-                .map(Arc::clone)
-                .expect("Stripe client not set. This is a bug."))
-        }
+    pub fn stripe_client(&self) -> Arc<stripe::Client> {
+        self.ctx.data::<UserData>().stripe_client.clone()
     }
 
-    pub async fn bot_id(&self) -> Result<UserId, lib::meetup::Error> {
-        if let Some(&bot_id) = self.bot_id.get() {
-            Ok(bot_id)
-        } else {
-            let bot_id = self
-                .ctx
-                .data
-                .read()
-                .await
-                .get::<super::bot::BotIdKey>()
-                .copied()
-                .ok_or_else(|| simple_error::SimpleError::new("Bot ID was not set"))?;
-            self.bot_id.set(bot_id).ok();
-            Ok(bot_id)
-        }
+    pub fn bot_id(&self) -> UserId {
+        self.ctx.data::<UserData>().bot_id
     }
 
     pub async fn channel(&self) -> Result<Channel, lib::meetup::Error> {
         if let Some(channel) = self.channel.get() {
             Ok(channel.clone())
         } else {
-            let channel = self.msg.channel_id.to_channel(&self.ctx).await?;
+            let channel = self.msg.channel(&self.ctx).await?;
             self.channel.set(channel.clone()).ok();
             Ok(channel)
         }
@@ -296,11 +200,13 @@ impl CommandContext {
     }
 
     pub async fn is_host(&mut self) -> Result<bool, lib::meetup::Error> {
-        let ctx = (&self.ctx).into();
-        let channel_id = self.msg.channel_id;
-        let user_id = self.msg.author.id;
-        let pool = self.pool().await?;
-        lib::discord::is_host(&ctx, channel_id, user_id, &pool).await
+        lib::discord::is_host(
+            &self.ctx,
+            self.msg.channel_id,
+            self.msg.author.id,
+            &self.pool(),
+        )
+        .await
     }
 
     pub async fn is_game_channel(
@@ -310,19 +216,17 @@ impl CommandContext {
         if let Some(tx) = tx {
             lib::is_game_channel(self.msg.channel_id, tx).await
         } else {
-            let mut connection = self.pool().await?.acquire().await?;
+            let mut connection = self.pool().acquire().await?;
             lib::is_game_channel(self.msg.channel_id, &mut connection).await
         }
     }
 
     pub async fn is_managed_channel(&mut self) -> Result<bool, lib::meetup::Error> {
-        let channel_id = self.msg.channel_id;
-        let pool = self.pool().await?;
         Ok(sqlx::query_scalar!(
             r#"SELECT COUNT(*) > 0 AS "is_managed_channel!" FROM managed_channel WHERE discord_id = $1"#,
-            channel_id.get() as i64
+            self.msg.channel_id.get() as i64
         )
-        .fetch_one(&pool)
+        .fetch_one(&self.pool())
         .await?)
     }
 }

@@ -9,7 +9,6 @@ use std::{backtrace::Backtrace, borrow::Cow};
 
 use askama::Template;
 use axum::{
-    body,
     http::{status::StatusCode, uri::InvalidUri},
     response::{IntoResponse, Response},
 };
@@ -62,18 +61,11 @@ pub enum WebError {
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
         let body = match self {
-            WebError::Lib(err) => body::boxed(body::Full::from(format!(
-                "Internal Server Error (Lib):\n{:#?}",
-                err
-            ))),
-            WebError::OAuthError(err) => body::boxed(body::Full::from(format!(
-                "Internal Server Error (OAuth):\n{:#?}",
-                err
-            ))),
-            WebError::Other(err) => body::boxed(body::Full::from(format!(
-                "Internal Server Error (Other):\n{:#?}",
-                err
-            ))),
+            WebError::Lib(err) => format!("Internal Server Error (Lib):\n{:#?}", err).into(),
+            WebError::OAuthError(err) => {
+                format!("Internal Server Error (OAuth):\n{:#?}", err).into()
+            }
+            WebError::Other(err) => format!("Internal Server Error (Other):\n{:#?}", err).into(),
             WebError::Unauthorized(message) => {
                 let template = MessageTemplate {
                     title: Cow::Borrowed("Unauthorized"),
@@ -115,7 +107,7 @@ impl From<InvalidHeaderValue> for WebError {
 }
 
 type RequestTokenError = oauth2::RequestTokenError<
-    oauth2::reqwest::AsyncHttpClientError,
+    oauth2::HttpClientError<oauth2::reqwest::Error>,
     oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
 >;
 

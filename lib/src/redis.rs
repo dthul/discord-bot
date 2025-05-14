@@ -6,7 +6,7 @@ use std::{future::Future, pin::Pin};
 pub fn closure_type_helper<
     T: redis::FromRedisValue + Send + 'static,
     F: for<'c> FnMut(
-        &'c mut redis::aio::Connection,
+        &'c mut redis::aio::MultiplexedConnection,
         redis::Pipeline,
     ) -> Pin<Box<dyn Future<Output = redis::RedisResult<Option<T>>> + Send + 'c>>,
 >(
@@ -20,11 +20,11 @@ pub async fn async_redis_transaction<
     K: redis::ToRedisArgs,
     T: redis::FromRedisValue + Send + 'static,
     F: for<'c> FnMut(
-        &'c mut redis::aio::Connection,
+        &'c mut redis::aio::MultiplexedConnection,
         redis::Pipeline,
     ) -> Pin<Box<dyn Future<Output = redis::RedisResult<Option<T>>> + Send + 'c>>,
 >(
-    con: &mut redis::aio::Connection,
+    con: &mut redis::aio::MultiplexedConnection,
     keys: &[K],
     mut func: F,
 ) -> redis::RedisResult<T> {
@@ -64,7 +64,7 @@ impl<'a> Lock<'a> {
         while start.elapsed() < acquire_timeout {
             let was_set: u8 = redis_connection.set_nx(lockname, identifier)?;
             if was_set == 1 {
-                redis_connection.expire(lockname, lock_timeout.as_secs() as i64)?;
+                redis_connection.expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)?;
                 return Ok(Some(Lock {
                     redis_connection,
                     lockname,
@@ -76,7 +76,7 @@ impl<'a> Lock<'a> {
                 let current_timeout: isize = redis_connection.ttl(lockname)?;
                 if current_timeout < 0 {
                     // No timeout set: set it now
-                    redis_connection.expire(lockname, lock_timeout.as_secs() as i64)?;
+                    redis_connection.expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)?;
                 }
             }
             // Sleep for a moment and re-try
@@ -112,14 +112,14 @@ impl<'a> Drop for Lock<'a> {
 }
 
 pub struct AsyncLock<'a> {
-    redis_connection: &'a mut redis::aio::Connection,
+    redis_connection: &'a mut redis::aio::MultiplexedConnection,
     lockname: &'a str,
     identifier: u64,
 }
 
 impl<'a> AsyncLock<'a> {
     pub async fn acquire_with_timeout(
-        redis_connection: &'a mut redis::aio::Connection,
+        redis_connection: &'a mut redis::aio::MultiplexedConnection,
         lockname: &'a str,
         acquire_timeout: std::time::Duration,
         lock_timeout: std::time::Duration,
@@ -130,7 +130,7 @@ impl<'a> AsyncLock<'a> {
             let was_set: u8 = redis_connection.set_nx(lockname, identifier).await?;
             if was_set == 1 {
                 redis_connection
-                    .expire(lockname, lock_timeout.as_secs() as i64)
+                    .expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)
                     .await?;
                 return Ok(Some(AsyncLock {
                     redis_connection,
@@ -144,7 +144,7 @@ impl<'a> AsyncLock<'a> {
                 if current_timeout < 0 {
                     // No timeout set: set it now
                     redis_connection
-                        .expire(lockname, lock_timeout.as_secs() as i64)
+                        .expire::<_, ()>(lockname, lock_timeout.as_secs() as i64)
                         .await?;
                 }
             }
@@ -173,7 +173,7 @@ impl<'a> AsyncLock<'a> {
         Ok(())
     }
 
-    pub fn con(&mut self) -> &mut redis::aio::Connection {
+    pub fn con(&mut self) -> &mut redis::aio::MultiplexedConnection {
         self.redis_connection
     }
 }

@@ -133,29 +133,31 @@ pub async fn update_roles(
     let mut current_gm_champions = vec![];
     let mut current_insiders = vec![];
     let mut current_gms = vec![];
-    let members = discord_api
-        .cache
-        .guild(crate::discord::sync::ids::GUILD_ID)
-        .map(|guild| guild.members.clone())
-        .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
-    for (&user_id, member) in &members {
-        let is_champion = member.roles.contains(&ids::CHAMPION_ID);
-        let is_gm_champion = member.roles.contains(&ids::GM_CHAMPION_ID);
-        let is_insider = member.roles.contains(&ids::INSIDER_ID);
-        let is_gm = member
-            .roles
-            .contains(&crate::discord::sync::ids::GAME_MASTER_ID);
-        if is_champion {
-            current_champions.push(user_id);
-        }
-        if is_gm_champion {
-            current_gm_champions.push(user_id);
-        }
-        if is_insider {
-            current_insiders.push(user_id);
-        }
-        if is_gm {
-            current_gms.push(user_id);
+    {
+        let guild = discord_api
+            .cache
+            .guild(crate::discord::sync::ids::GUILD_ID)
+            .ok_or_else(|| simple_error::SimpleError::new("Did not find guild in cache"))?;
+        for member in &guild.members {
+            let user_id = member.user.id;
+            let is_champion = member.roles.contains(&ids::CHAMPION_ID);
+            let is_gm_champion = member.roles.contains(&ids::GM_CHAMPION_ID);
+            let is_insider = member.roles.contains(&ids::INSIDER_ID);
+            let is_gm = member
+                .roles
+                .contains(&crate::discord::sync::ids::GAME_MASTER_ID);
+            if is_champion {
+                current_champions.push(user_id);
+            }
+            if is_gm_champion {
+                current_gm_champions.push(user_id);
+            }
+            if is_insider {
+                current_insiders.push(user_id);
+            }
+            if is_gm {
+                current_gms.push(user_id);
+            }
         }
     }
     // Assign the role(s) to users which earned it but don't have it yet and

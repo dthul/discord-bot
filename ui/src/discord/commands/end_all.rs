@@ -10,7 +10,7 @@ fn end_all<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let pool = context.pool().await?;
+    let pool = context.pool();
     // Find all channels which can be ended
     let channel_ids = sqlx::query!(
         r#"SELECT discord_id FROM event_series_text_channel WHERE
@@ -52,7 +52,7 @@ fn end_all<'a>(
         tx.commit().await?;
         match end_adventure_result {
             EndAdventureResult::NewlyMarkedForDeletion(_) => channel_id
-                .say(&context.ctx, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
+                .say(&context.ctx.http, lib::strings::CHANNEL_MARKED_FOR_CLOSING)
                 .await
                 .ok(),
             EndAdventureResult::NotAGameChannel
@@ -60,7 +60,7 @@ fn end_all<'a>(
             | EndAdventureResult::NotYetExpired
             | EndAdventureResult::AlreadyMarkedForDeletion(_) => continue,
         };
-        let channel = channel_id.to_channel(&context.ctx).await;
+        let channel = channel_id.to_guild_channel(&context.ctx).await;
         let channel_name = match &channel {
             Ok(Channel::Guild(channel)) => &channel.name,
             _ => "'unknown'",

@@ -13,7 +13,7 @@ use tokio::{task::JoinError, time::error::Elapsed};
 use url::ParseError as UrlParseError;
 
 type RequestTokenError = oauth2::RequestTokenError<
-    oauth2::reqwest::AsyncHttpClientError,
+    oauth2::HttpClientError<oauth2::reqwest::Error>,
     oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
 >;
 

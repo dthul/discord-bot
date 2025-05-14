@@ -25,12 +25,12 @@ fn snooze<'a>(
         context
             .msg
             .channel_id
-            .say(&context.ctx, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
+            .say(&context.ctx.http, lib::strings::CHANNEL_NOT_BOT_CONTROLLED)
             .await
             .ok();
         return Ok(());
     };
-    let pool = context.pool().await?;
+    let pool = context.pool();
     if num_days == 0 {
         // Remove the snooze
         sqlx::query!(
@@ -42,7 +42,7 @@ fn snooze<'a>(
         context
             .msg
             .channel_id
-            .say(&context.ctx, "Disabled snoozing.")
+            .say(&context.ctx.http, "Disabled snoozing.")
             .await
             .ok();
     } else {
@@ -58,7 +58,7 @@ fn snooze<'a>(
         context
             .msg
             .channel_id
-            .say(&context.ctx, format!("Snoozing for {} days.", num_days))
+            .say(&context.ctx.http, format!("Snoozing for {} days.", num_days))
             .await
             .ok();
     }

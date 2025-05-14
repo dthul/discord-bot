@@ -2,6 +2,8 @@ use redis::AsyncCommands;
 use serenity::{builder::EditChannel, model::channel::Channel};
 use std::time::Duration;
 
+use crate::discord::sync::ids::GUILD_ID;
+
 pub const DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME: &str = "Your topic (ask Hyperion)";
 
 // Resets the user topic voice channel
@@ -18,7 +20,7 @@ pub async fn reset_user_topic_voice_channel_task(
     loop {
         // Wait for the next interval tick
         interval_timer.tick().await;
-        let mut redis_connection = match redis_client.get_async_connection().await {
+        let mut redis_connection = match redis_client.get_multiplexed_async_connection().await {
             Ok(con) => con,
             Err(err) => {
                 eprintln!(
@@ -37,7 +39,7 @@ pub async fn reset_user_topic_voice_channel_task(
 }
 
 async fn reset_user_topic_voice_channel(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     discord_api: &crate::discord::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Check if there is a user topic voice channel
@@ -47,14 +49,11 @@ async fn reset_user_topic_voice_channel(
     } else {
         return Ok(());
     };
-    let voice_channel = voice_channel_id.to_channel(discord_api).await?;
-    let mut voice_channel = if let Channel::Guild(voice_channel) = voice_channel {
-        voice_channel
-    } else {
-        return Ok(());
-    };
+    let mut voice_channel = voice_channel_id
+        .to_guild_channel(discord_api, Some(GUILD_ID))
+        .await?;
     // Check if the voice channel's name is different from the default
-    if voice_channel.name() == DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME {
+    if voice_channel.base.name == DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME {
         return Ok(());
     }
     // Check if the voice channel is empty
@@ -88,7 +87,7 @@ async fn reset_user_topic_voice_channel(
     // call into a timeout which will abort the request if it is not answered
     // quickly enough.
     let rename_channel_future = voice_channel.edit(
-        discord_api,
+        &discord_api.http,
         EditChannel::new().name(DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME),
     );
     match tokio::time::timeout(Duration::from_secs(10), rename_channel_future).await {

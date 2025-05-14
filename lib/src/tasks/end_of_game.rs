@@ -9,7 +9,6 @@ use serenity::{
     },
 };
 use simple_error::SimpleError;
-use std::collections::HashMap;
 
 // Sends channel deletion reminders to expired Discord channels
 pub async fn create_recurring_end_of_game_task(
@@ -68,9 +67,11 @@ pub async fn end_of_game_task(
             eprintln!("Series channel expiration update failed: {:#}", err);
         }
     }
-    let existing_channels = crate::discord::sync::ids::GUILD_ID
+    let existing_channels: Vec<GuildChannel> = crate::discord::sync::ids::GUILD_ID
         .channels(&discord_api.http)
-        .await?;
+        .await?
+        .into_iter()
+        .collect();
     let discord_channels = sqlx::query!(
         r#"
         SELECT discord_id as "discord_text_channel_id!"
@@ -136,9 +137,11 @@ pub async fn end_of_game_task(
             eprintln!("Error during voice channel deletion: {:#}", err);
         }
     }
-    let existing_roles = crate::discord::sync::ids::GUILD_ID
+    let existing_roles: Vec<Role> = crate::discord::sync::ids::GUILD_ID
         .roles(&discord_api.http)
-        .await?;
+        .await?
+        .into_iter()
+        .collect();
     let discord_roles = sqlx::query!(
         r#"SELECT discord_id as "discord_role_id!"
             FROM event_series_role
@@ -346,6 +349,7 @@ async fn send_channel_expiration_reminder(
             strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role)
         });
         channel_id
+            .widen()
             .send_message(&discord_api.http, message_builder)
             .await?;
         sqlx::query!("UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1", channel_id.get() as i64).execute(db_connection).await?;
@@ -367,7 +371,7 @@ enum DeletionStatus {
 async fn delete_marked_channel(
     channel_type: ChannelType,
     channel_id: ChannelId,
-    existing_channels: &HashMap<ChannelId, GuildChannel>,
+    existing_channels: &[GuildChannel],
     db_connection: &sqlx::PgPool,
     discord_api: &crate::discord::CacheAndHttp,
 ) -> Result<DeletionStatus, crate::meetup::Error> {
@@ -382,7 +386,10 @@ async fn delete_marked_channel(
         }
     };
     // Check whether the channel still exists on Discord
-    let channel = if let Some(channel) = existing_channels.get(&channel_id) {
+    let channel = if let Some(channel) = existing_channels
+        .iter()
+        .find(|channel| channel.id == channel_id)
+    {
         channel
     } else {
         mark_channel_as_deleted().await?;
@@ -415,7 +422,7 @@ async fn delete_marked_channel(
         return Ok(DeletionStatus::NotDeleted);
     }
     // Delete the channel from Discord
-    channel.delete(discord_api).await?;
+    channel.delete(&discord_api.http, None).await?;
     // Mark the channel as deleted
     mark_channel_as_deleted().await?;
     Ok(DeletionStatus::Deleted)
@@ -424,7 +431,7 @@ async fn delete_marked_channel(
 async fn delete_marked_role(
     is_host_role: bool,
     role_id: RoleId,
-    existing_roles: &HashMap<RoleId, Role>,
+    existing_roles: &[Role],
     db_connection: &sqlx::PgPool,
     discord_api: &crate::discord::CacheAndHttp,
 ) -> Result<DeletionStatus, crate::meetup::Error> {
@@ -436,7 +443,7 @@ async fn delete_marked_role(
         }
     };
     // Check whether the role still exists on Discord
-    let mut role = if let Some(role) = existing_roles.get(&role_id) {
+    let mut role = if let Some(role) = existing_roles.iter().find(|role| role.id == role_id) {
         role.clone()
     } else {
         mark_role_as_deleted().await?;
@@ -466,7 +473,7 @@ async fn delete_marked_role(
         return Ok(DeletionStatus::NotDeleted);
     }
     // Delete the role from Discord
-    role.delete(&discord_api.http).await?;
+    role.delete(&discord_api.http, None).await?;
     // Mark the role as deleted
     mark_role_as_deleted().await?;
     Ok(DeletionStatus::Deleted)

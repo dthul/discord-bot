@@ -2,14 +2,16 @@ use std::{borrow::Cow, sync::Arc};
 
 use askama::Template;
 use axum::{
-    extract::{Extension, Form, Path, TypedHeader},
-    headers::HeaderMapExt,
+    body::Body,
+    extract::{Extension, Form, Path},
     http::{header::SET_COOKIE, HeaderValue, Request},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Router,
 };
+use axum_extra::headers::HeaderMapExt;
+use axum_extra::TypedHeader;
 use base64::{engine::general_purpose, Engine as _};
 use cookie::{Cookie, CookieJar, Key, SameSite};
 use lib::db::MemberId;
@@ -35,7 +37,7 @@ pub fn create_routes() -> Router {
 // - possibly in the future: require 2FA for admins (like TOTP) for first login and if the last used time is older than a certain threshold (but not so old that it would count as expired)
 
 pub async fn generate_login_link(
-    redis_connection: &mut redis::aio::Connection,
+    redis_connection: &mut redis::aio::MultiplexedConnection,
     discord_id: UserId,
 ) -> Result<String, lib::meetup::Error> {
     let auth_id = lib::new_random_id(16);
@@ -63,13 +65,17 @@ struct AuthTemplate<'a> {
     auth_id: &'a str,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct AuthenticatedMember(pub MemberId);
 
 async fn auth_handler_get(
     Path(auth_id): Path<String>,
     state: Extension<Arc<State>>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     let redis_key = format!("web_session_auth:{}:discord_user", &auth_id);
     // Check if this auth ID is valid
     let discord_id: Option<u64> = redis_connection.get(redis_key).await?;
@@ -90,7 +96,10 @@ async fn auth_handler_post(
     state: Extension<Arc<State>>,
     form: Form<AuthForm>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     let redis_key = format!("web_session_auth:{}:discord_user", form.auth_id);
     // This is a one-time use link. Expire it now.
     let mut pipe = redis::pipe();
@@ -142,12 +151,13 @@ async fn auth_handler_post(
     // Notify on Discord about new login
     // TODO: maybe only for admins
     if let Ok(user) = discord_id.to_user(&state.discord_cache_http).await {
-        user.direct_message(
-            &state.discord_cache_http,
-            CreateMessage::new().content("New web login registered"),
-        )
-        .await
-        .ok();
+        user.id
+            .direct_message(
+                &state.discord_cache_http.http,
+                CreateMessage::new().content("New web login registered"),
+            )
+            .await
+            .ok();
     }
     Ok(response)
 }
@@ -202,7 +212,7 @@ impl<T: IntoResponse> IntoResponse for RemoveAuthCookie<T> {
 }
 
 async fn logout_handler(
-    TypedHeader(cookie_header): TypedHeader<axum::headers::Cookie>,
+    TypedHeader(cookie_header): TypedHeader<axum_extra::headers::Cookie>,
     Extension(state): Extension<Arc<State>>,
 ) -> Result<impl IntoResponse, WebError> {
     // Check if there is an auth cookie with a valid session ID
@@ -229,7 +239,7 @@ async fn logout_handler(
     Ok(RemoveAuthCookie(Redirect::to("/")))
 }
 
-pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, WebError> {
+pub async fn auth(mut req: Request<Body>, next: Next) -> Result<Response, WebError> {
     let state: &Arc<State> = match req.extensions().get() {
         Some(state) => state,
         None => return Err(SimpleError::new("State is not set").into()),
@@ -238,7 +248,7 @@ pub async fn auth<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, Web
     // It looks like typed_get() (and the TypedHeader extractor) will merge all
     // occurences of a specific header, so this should be sufficient to handle
     // multiple "Cookie" headers (which is allowed by HTTP2)
-    let cookie_header: Option<axum::headers::Cookie> = req.headers().typed_get();
+    let cookie_header: Option<axum_extra::headers::Cookie> = req.headers().typed_get();
     let mut jar = CookieJar::new();
     if let Some(cookie_header) = cookie_header {
         for (cookie_name, cookie_value) in cookie_header.iter() {

@@ -17,20 +17,20 @@ fn login<'a>(
         .msg
         .author
         .direct_message(
-            &context.ctx,
+            &context.ctx.http,
             CreateMessage::new().content(lib::strings::LOGIN_LINK_MESSAGE(&url)),
         )
         .await;
     match dm {
         Ok(_) => {
-            context.msg.react(&context.ctx, '\u{2705}').await.ok();
+            context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
         }
         Err(why) => {
             eprintln!("Error sending login DM: {:?}", why);
             context
                 .msg
                 .reply(
-                    &context.ctx,
+                    &context.ctx.http,
                     "There was an error trying to send you a login link.\nDo you have direct \
                      messages disabled? In that case send me a private message with the text \
                      \"login\".",

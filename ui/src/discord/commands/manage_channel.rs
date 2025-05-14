@@ -17,14 +17,14 @@ fn manage_channel<'a>(
 ) -> super::CommandResult<'a> {
     let channel_id = context.msg.channel_id;
     // Step 1: Try to mark this channel as managed
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     let is_game_channel = context.is_game_channel(Some(&mut tx)).await?;
     if is_game_channel {
         context
             .msg
             .channel_id
-            .say(&context.ctx, "Can not manage this channel")
+            .say(&context.ctx.http, "Can not manage this channel")
             .await
             .ok();
         return Ok(());
@@ -41,7 +41,7 @@ fn manage_channel<'a>(
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, "Can not manage this channel")
+                .say(&context.ctx.http, "Can not manage this channel")
                 .await
                 .ok();
             return Ok(());
@@ -51,30 +51,34 @@ fn manage_channel<'a>(
             context
                 .msg
                 .channel_id
-                .say(&context.ctx, "Error when trying to manage this channel")
+                .say(
+                    &context.ctx.http,
+                    "Error when trying to manage this channel",
+                )
                 .await
                 .ok();
             return Ok(());
         }
     };
     // Step 2: Grant the bot continued access to the channel
-    let bot_id = context.bot_id().await?;
+    let bot_id = context.bot_id();
     channel
         .create_permission(
-            &context.ctx,
+            &context.ctx.http,
             PermissionOverwrite {
                 allow: Permissions::VIEW_CHANNEL,
                 deny: Permissions::empty(),
                 kind: PermissionOverwriteType::Member(bot_id),
             },
+            None,
         )
         .await?;
     // Step 3: Grant all current users access to the channel
-    let mut current_channel_members = channel.members(&context.ctx)?;
+    let mut current_channel_members = channel.members(&context.ctx.cache)?;
     for member in &mut current_channel_members {
         // Don't explicitly grant access to admins
         let is_admin = {
-            if let Ok(member_permissions) = member.permissions(&context.ctx) {
+            if let Ok(member_permissions) = member.permissions(&context.ctx.cache) {
                 member_permissions.administrator()
             } else {
                 false
@@ -85,16 +89,17 @@ fn manage_channel<'a>(
         }
         channel
             .create_permission(
-                &context.ctx,
+                &context.ctx.http,
                 PermissionOverwrite {
                     allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Member(member.user.id),
                 },
+                None,
             )
             .await?;
     }
     tx.commit().await?;
-    context.msg.react(&context.ctx, '\u{2705}').await.ok();
+    context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
     Ok(())
 }

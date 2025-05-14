@@ -95,7 +95,7 @@ async fn schedule_session_handler(
     Extension(state): Extension<Arc<State>>,
     Path(flow_id): Path<u64>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state.redis_client.get_multiplexed_async_connection().await?;
     eprintln!("Retrieving flow...");
     let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
@@ -162,7 +162,7 @@ async fn schedule_session_post_handler(
     Path(flow_id): Path<u64>,
     Form(form_data): Form<HashMap<String, String>>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_async_connection().await?;
+    let mut redis_connection = state.redis_client.get_multiplexed_async_connection().await?;
     let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,

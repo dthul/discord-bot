@@ -25,7 +25,7 @@ pub async fn create_recurring_syncing_task(
         let discord_api = discord_api.clone();
         let meetup_client = meetup_client.clone();
         tokio::spawn(async move {
-            let mut redis_connection = redis_client.get_async_connection().await?;
+            let mut redis_connection = redis_client.get_multiplexed_async_connection().await?;
             // Sync with Meetup
             let event_collector = tokio::time::timeout(
                 Duration::from_secs(360),

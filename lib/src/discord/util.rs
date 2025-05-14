@@ -17,7 +17,10 @@ pub async fn say_in_event_series_channel(
     .map(|row| ChannelId::new(row.discord_text_channel_id as u64))
     .fetch_one(db_connection)
     .await?;
-    channel_id.say(&discord_cache_http.http, message).await?;
+    channel_id
+        .widen()
+        .say(&discord_cache_http.http, message)
+        .await?;
     Ok(())
 }
 
@@ -38,7 +41,10 @@ pub async fn say_in_event_channel(
     .map(|row| ChannelId::new(row.discord_text_channel_id as u64))
     .fetch_one(db_connection)
     .await?;
-    channel_id.say(&discord_cache_http.http, message).await?;
+    channel_id
+        .widen()
+        .say(&discord_cache_http.http, message)
+        .await?;
     Ok(())
 }
 
@@ -48,6 +54,7 @@ pub async fn say_in_bot_alerts_channel(
 ) -> Result<(), crate::BoxedError> {
     if let Some(channel_id) = super::sync::ids::BOT_ALERTS_CHANNEL_ID {
         channel_id
+            .widen()
             .say(&discord_cache_http.http, message)
             .await
             .map(|_| ())

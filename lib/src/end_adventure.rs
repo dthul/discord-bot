@@ -19,21 +19,22 @@ pub async fn end_adventure(
     if !is_game_channel {
         return Ok(EndAdventureResult::NotAGameChannel);
     };
-    // Check if there is a channel expiration time in the future
-    let expiration_time = sqlx::query_scalar!(
-        r#"SELECT expiration_time FROM event_series_text_channel WHERE discord_id = $1"#,
-        channel_id.get() as i64
-    )
-    .fetch_one(&mut **db_connection)
-    .await?;
-    let expiration_time = if let Some(expiration_time) = expiration_time {
-        expiration_time
-    } else {
-        return Ok(EndAdventureResult::NoExpirationTime);
-    };
-    if expiration_time > chrono::Utc::now() {
-        return Ok(EndAdventureResult::NotYetExpired);
-    }
+    // // Check if there is a channel expiration time in the future
+    // let expiration_time = sqlx::query_scalar!(
+    //     r#"SELECT expiration_time FROM event_series_text_channel WHERE discord_id = $1"#,
+    //     channel_id.get() as i64
+    // )
+    // .fetch_one(&mut **db_connection)
+    // .await?;
+    // let expiration_time = if let Some(expiration_time) = expiration_time {
+    //     expiration_time
+    // } else {
+    //     return Ok(EndAdventureResult::NoExpirationTime);
+    // };
+    // if expiration_time > chrono::Utc::now() {
+    //     return Ok(EndAdventureResult::NotYetExpired);
+    // }
+    let expiration_time = chrono::Utc::now();
     // Schedule this channel for deletion
     let new_deletion_time = chrono::Utc::now() + chrono::Duration::hours(8);
     let current_deletion_time = sqlx::query_scalar!(

@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1.75-slim-bookworm AS chef
+FROM --platform=$BUILDPLATFORM rust:1.81-slim-bookworm AS chef
 RUN rustup target add x86_64-unknown-linux-gnu
 RUN cargo install cargo-chef --locked
 RUN apt-get update && \

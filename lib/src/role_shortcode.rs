@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
 use futures_util::lock::Mutex;
-use serenity::{all::Mentionable, builder::CreateMessage, model::id::RoleId};
+use serenity::{
+    all::{CacheHttp, Mentionable},
+    builder::CreateMessage,
+    model::id::RoleId,
+};
 use simple_error::SimpleError;
 
 use super::free_spots::EventCollector;
-use crate::{db, DefaultStr};
+use crate::{db, discord::sync::ids::GUILD_ID, DefaultStr};
 
 impl EventCollector {
     pub async fn assign_roles(
@@ -122,19 +126,26 @@ impl EventCollector {
                         )
                         .await
                         {
-                            let role_text = role_id
-                                .to_role_cached(&discord_api.cache)
-                                .map(|role| format!("**{}**", role.name))
+                            let role_text = GUILD_ID
+                                .to_guild_cached(&discord_api.cache)
+                                .and_then(|guild| {
+                                    guild
+                                        .roles
+                                        .get(&role_id)
+                                        .map(|role| format!("**{}**", role.name))
+                                })
                                 .unwrap_or_else(|| role_id.mention().to_string());
                             // Let the user know about the new role
                             if let Ok(user) = discord_user_id.to_user(discord_api).await {
-                                user.direct_message(
-                                    discord_api,
-                                    CreateMessage::new()
-                                        .content(crate::strings::NEW_ROLE_ASSIGNED_DM(&role_text)),
-                                )
-                                .await
-                                .ok();
+                                user.id
+                                    .direct_message(
+                                        discord_api.http(),
+                                        CreateMessage::new().content(
+                                            crate::strings::NEW_ROLE_ASSIGNED_DM(&role_text),
+                                        ),
+                                    )
+                                    .await
+                                    .ok();
                             }
                         }
                     }

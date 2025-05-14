@@ -2,13 +2,13 @@ use std::{ops::Deref, sync::Arc};
 
 use axum::{
     async_trait,
-    extract::{Extension, FromRequestParts, Path, TypedHeader},
-    headers::Header,
+    extract::{Extension, FromRequestParts, Path},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
+use axum_extra::{headers::Header, TypedHeader};
 use hyper::http::request::Parts;
 use lazy_static::lazy_static;
 use lib::db::get_meetup_events_participants;
@@ -29,8 +29,8 @@ pub fn create_routes() -> Router {
 struct ApiKeyHeader(String);
 
 lazy_static! {
-    static ref API_KEY_HEADER: axum::headers::HeaderName =
-        axum::headers::HeaderName::from_lowercase(b"api-key").unwrap();
+    static ref API_KEY_HEADER: axum_extra::headers::HeaderName =
+        axum_extra::headers::HeaderName::from_lowercase(b"api-key").unwrap();
 }
 
 impl Deref for ApiKeyHeader {
@@ -42,24 +42,26 @@ impl Deref for ApiKeyHeader {
 }
 
 impl Header for ApiKeyHeader {
-    fn name() -> &'static axum::headers::HeaderName {
+    fn name() -> &'static axum_extra::headers::HeaderName {
         &API_KEY_HEADER
     }
 
-    fn decode<'i, I>(values: &mut I) -> Result<Self, axum::headers::Error>
+    fn decode<'i, I>(values: &mut I) -> Result<Self, axum_extra::headers::Error>
     where
         Self: Sized,
-        I: Iterator<Item = &'i axum::headers::HeaderValue>,
+        I: Iterator<Item = &'i axum_extra::headers::HeaderValue>,
     {
-        let value = values.next().ok_or_else(axum::headers::Error::invalid)?;
+        let value = values
+            .next()
+            .ok_or_else(axum_extra::headers::Error::invalid)?;
         let value = value
             .to_str()
-            .map_err(|_| axum::headers::Error::invalid())?;
+            .map_err(|_| axum_extra::headers::Error::invalid())?;
         Ok(ApiKeyHeader(value.into()))
     }
 
-    fn encode<E: Extend<axum::headers::HeaderValue>>(&self, values: &mut E) {
-        match axum::headers::HeaderValue::from_str(&self.0) {
+    fn encode<E: Extend<axum_extra::headers::HeaderValue>>(&self, values: &mut E) {
+        match axum_extra::headers::HeaderValue::from_str(&self.0) {
             Ok(header_value) => values.extend(Some(header_value)),
             Err(err) => eprintln!("Failed to encode Api-Key HTTP header: {:#?}", err),
         }
@@ -69,8 +71,8 @@ impl Header for ApiKeyHeader {
 struct DiscordUsernameHeader(String);
 
 lazy_static! {
-    static ref DISCORD_USERNAME_HEADER: axum::headers::HeaderName =
-        axum::headers::HeaderName::from_lowercase(b"discord-username").unwrap();
+    static ref DISCORD_USERNAME_HEADER: axum_extra::headers::HeaderName =
+        axum_extra::headers::HeaderName::from_lowercase(b"discord-username").unwrap();
 }
 
 impl Deref for DiscordUsernameHeader {
@@ -82,24 +84,26 @@ impl Deref for DiscordUsernameHeader {
 }
 
 impl Header for DiscordUsernameHeader {
-    fn name() -> &'static axum::headers::HeaderName {
+    fn name() -> &'static axum_extra::headers::HeaderName {
         &DISCORD_USERNAME_HEADER
     }
 
-    fn decode<'i, I>(values: &mut I) -> Result<Self, axum::headers::Error>
+    fn decode<'i, I>(values: &mut I) -> Result<Self, axum_extra::headers::Error>
     where
         Self: Sized,
-        I: Iterator<Item = &'i axum::headers::HeaderValue>,
+        I: Iterator<Item = &'i axum_extra::headers::HeaderValue>,
     {
-        let value = values.next().ok_or_else(axum::headers::Error::invalid)?;
+        let value = values
+            .next()
+            .ok_or_else(axum_extra::headers::Error::invalid)?;
         let value = value
             .to_str()
-            .map_err(|_| axum::headers::Error::invalid())?;
+            .map_err(|_| axum_extra::headers::Error::invalid())?;
         Ok(DiscordUsernameHeader(value.into()))
     }
 
-    fn encode<E: Extend<axum::headers::HeaderValue>>(&self, values: &mut E) {
-        match axum::headers::HeaderValue::from_str(&self.0) {
+    fn encode<E: Extend<axum_extra::headers::HeaderValue>>(&self, values: &mut E) {
+        match axum_extra::headers::HeaderValue::from_str(&self.0) {
             Ok(header_value) => values.extend(Some(header_value)),
             Err(err) => eprintln!("Failed to encode Discord-Username HTTP header: {:#?}", err),
         }

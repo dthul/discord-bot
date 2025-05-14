@@ -7,7 +7,7 @@ use serenity::{
     builder::{CreateEmbed, CreateMessage},
     model::id::UserId,
 };
-use std::{borrow::Cow, num::NonZeroU64};
+use std::borrow::Cow;
 
 #[command]
 #[regex(r"link[ -]?meetup")]
@@ -16,7 +16,7 @@ fn link_meetup<'a>(
     context: &'a mut super::CommandContext,
     _: regex::Captures<'a>,
 ) -> super::CommandResult<'a> {
-    let pool = context.pool().await?;
+    let pool = context.pool();
     // Check if there is already a meetup id linked to this user
     // and issue a warning
     let linked_meetup_id = sqlx::query!(
@@ -28,7 +28,7 @@ fn link_meetup<'a>(
     .await?
     .flatten();
     if let Some(linked_meetup_id) = linked_meetup_id {
-        let bot_id = context.bot_id().await?;
+        let bot_id = context.bot_id();
         let message_builder =
             CreateMessage::new().content(lib::strings::DISCORD_ALREADY_LINKED_MESSAGE(
                 &format!("https://www.meetup.com/members/{}/", linked_meetup_id),
@@ -37,7 +37,7 @@ fn link_meetup<'a>(
         context
             .msg
             .author
-            .direct_message(&context.ctx, message_builder)
+            .direct_message(&context.ctx.http, message_builder)
             .await
             .ok();
         return Ok(());
@@ -52,16 +52,16 @@ fn link_meetup<'a>(
     let dm = context
         .msg
         .author
-        .direct_message(&context.ctx, message_builder)
+        .direct_message(&context.ctx.http, message_builder)
         .await;
     match dm {
         Ok(_) => {
-            context.msg.react(&context.ctx, '\u{2705}').await.ok();
+            context.msg.react(&context.ctx.http, '\u{2705}').await.ok();
         }
         Err(why) => {
             eprintln!("Error sending Meetup linking DM: {:?}", why);
             context.msg.reply(
-                &context.ctx,
+                &context.ctx.http,
                 "There was an error trying to send you instructions.\nDo you have direct messages \
                  disabled? In that case send me a private message with the text \"link meetup\".",
             ).await.ok();
@@ -98,18 +98,17 @@ fn link_meetup_bot_admin<'a>(
     let discord_id = captures.name("mention_id").unwrap().as_str();
     let meetup_id = captures.name("meetupid").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let (discord_id, meetup_id) = match (discord_id.parse::<NonZeroU64>(), meetup_id.parse::<u64>())
-    {
+    let (discord_id, meetup_id) = match (discord_id.parse::<u64>(), meetup_id.parse::<u64>()) {
         (Ok(id1), Ok(id2)) => (UserId::from(id1), id2),
         _ => {
             let _ = context.msg.channel_id.say(
-                &context.ctx,
+                &context.ctx.http,
                 "Seems like the specified Discord or Meetup ID is invalid",
             );
             return Ok(());
         }
     };
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     let linking_result = lib::link_discord_meetup(discord_id, meetup_id, &mut tx).await?;
     tx.commit().await?;
@@ -122,7 +121,7 @@ fn link_meetup_bot_admin<'a>(
                 .msg
                 .channel_id
                 .say(
-                    &context.ctx,
+                    &context.ctx.http,
                     format!(
                         "All good, this Meetup account was already linked to {}",
                         discord_id.mention()
@@ -144,7 +143,7 @@ fn link_meetup_bot_admin<'a>(
             let _ = context
                 .msg
                 .channel_id
-                .send_message(&context.ctx, message_builder);
+                .send_message(&context.ctx.http, message_builder);
         }
         LinkingResult::Conflict {
             member_with_meetup:
@@ -170,7 +169,12 @@ fn link_meetup_bot_admin<'a>(
             Meetup ID: {meetup_id2:?}\n\
             Discord ID: {discord_id2:?}");
             // TODO: answer in DM?
-            context.msg.channel_id.say(&context.ctx, message).await.ok();
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx.http, message)
+                .await
+                .ok();
         }
     };
     Ok(())
@@ -189,11 +193,11 @@ fn unlink_meetup_bot_admin<'a>(
 ) -> super::CommandResult<'a> {
     let discord_id = captures.name("mention_id").unwrap().as_str();
     // Try to convert the specified ID to an integer
-    let discord_id = match discord_id.parse::<NonZeroU64>() {
+    let discord_id = match discord_id.parse::<u64>() {
         Ok(id) => UserId::from(id),
         _ => {
             let _ = context.msg.channel_id.say(
-                &context.ctx,
+                &context.ctx.http,
                 "Seems like the specified Discord ID is invalid",
             );
             return Ok(());
@@ -207,7 +211,7 @@ async fn unlink_meetup_impl(
     is_bot_admin_command: bool,
     user_id: UserId,
 ) -> Result<(), lib::meetup::Error> {
-    let pool = context.pool().await?;
+    let pool = context.pool();
     let mut tx = pool.begin().await?;
     let result = lib::unlink_meetup(user_id, &mut tx).await?;
     tx.commit().await?;
@@ -216,9 +220,14 @@ async fn unlink_meetup_impl(
             let message = if is_bot_admin_command {
                 format!("Unlinked {}'s Meetup account", user_id.mention())
             } else {
-                lib::strings::MEETUP_UNLINK_SUCCESS(context.bot_id().await?)
+                lib::strings::MEETUP_UNLINK_SUCCESS(context.bot_id())
             };
-            context.msg.channel_id.say(&context.ctx, message).await.ok();
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx.http, message)
+                .await
+                .ok();
         }
         UnlinkingResult::NotLinked => {
             let message = if is_bot_admin_command {
@@ -229,7 +238,12 @@ async fn unlink_meetup_impl(
             } else {
                 Cow::Borrowed(lib::strings::MEETUP_UNLINK_NOT_LINKED)
             };
-            context.msg.channel_id.say(&context.ctx, message).await.ok();
+            context
+                .msg
+                .channel_id
+                .say(&context.ctx.http, message)
+                .await
+                .ok();
         }
     }
     Ok(())

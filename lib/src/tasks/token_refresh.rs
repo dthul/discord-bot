@@ -87,6 +87,7 @@ async fn organizer_token_refresh_task_impl(
     let new_auth_token = crate::meetup::oauth2::refresh_oauth_tokens(
         TokenType::Organizer,
         &oauth2_consumer.authorization_client,
+        &oauth2_consumer.http_client,
         &pool,
     )
     .await?;
@@ -199,6 +200,7 @@ async fn user_token_refresh_task_impl(
     let new_auth_token = crate::meetup::oauth2::refresh_oauth_tokens(
         TokenType::Member(member_id),
         &oauth2_consumer.authorization_client,
+        &oauth2_consumer.http_client,
         &pool,
     )
     .await;

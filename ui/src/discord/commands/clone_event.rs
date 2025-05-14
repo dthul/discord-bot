@@ -29,7 +29,7 @@ fn clone_event<'a>(
     .await?;
     // Try to transfer the RSVPs to the new event
     let redis_client = context.redis_client();
-    let mut redis_connection = redis_client.await?.get_async_connection().await?;
+    let mut redis_connection = redis_client.await?.get_multiplexed_async_connection().await?;
     if let Err(_) = lib::meetup::util::clone_rsvps(
         urlname,
         meetup_event_id,
