@@ -35,7 +35,7 @@ regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = "1.0"
 serde_json = "1.0"
-serenity = { git = "https://github.com/serenity-rs/serenity.git", rev = "80c657efa7fb981449cab8fab69097c9dc93a50a", default-features = false, features = ["cache", "gateway", "model", "rustls_backend"] }
+serenity = { git = "https://github.com/serenity-rs/serenity.git", rev = "4a180eb7205575d8baae5254c852532119f2e1b7", default-features = false, features = ["cache", "gateway", "model", "rustls_backend"] }
 simple-error = "0.3"
 sqlx = { version = "0.8", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }

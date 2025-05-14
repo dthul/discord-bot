@@ -67,7 +67,7 @@ fn set_voice_topic<'a>(
     }
     // Check the channel's current title
     let mut voice_channel = if let Ok(Channel::Guild(channel)) = voice_channel_id
-        .to_channel(&context.ctx, Some(GUILD_ID))
+        .to_guild_channel(&context.ctx, Some(GUILD_ID))
         .await
     {
         channel

@@ -31,8 +31,16 @@ pub async fn message_hook(
     };
     // Ignore messages from game channels
     let game_channels = get_game_channels_list(cmdctx).await?;
-    if game_channels.channel_ids.contains(&cmdctx.msg.channel_id) {
-        return Ok(());
+    if let Some(channel_id) = cmdctx
+        .msg
+        .guild_channel(&cmdctx.ctx)
+        .await
+        .ok()
+        .map(|channel| channel.id)
+    {
+        if game_channels.channel_ids.contains(&channel_id) {
+            return Ok(());
+        }
     }
     let spam_list = get_spam_list(cmdctx).await?;
     let (word_list, spam_matcher) = &*spam_list;
@@ -58,7 +66,10 @@ pub async fn message_hook(
                 )
                 .as_str(),
             );
-        alert_channel_id.say(&cmdctx.ctx.http, msg.build()).await?;
+        alert_channel_id
+            .widen()
+            .say(&cmdctx.ctx.http, msg.build())
+            .await?;
     }
     Ok(())
 }

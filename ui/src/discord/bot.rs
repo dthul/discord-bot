@@ -6,7 +6,7 @@ use std::sync::{
 use futures_util::lock::Mutex as AsyncMutex;
 use lib::strings;
 use serenity::{
-    all::GuildMemberUpdateEvent,
+    all::{Framework, FullEvent, GuildMemberUpdateEvent},
     async_trait,
     builder::CreateMessage,
     model::{
@@ -38,7 +38,7 @@ pub struct UserData {
 }
 
 pub async fn create_discord_client(
-    discord_token: &str,
+    discord_token: Token,
     redis_client: redis::Client,
     pool: sqlx::PgPool,
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
@@ -46,7 +46,7 @@ pub async fn create_discord_client(
     stripe_client: Arc<stripe::Client>,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<Client, lib::meetup::Error> {
-    let http = serenity::http::HttpBuilder::new(discord_token).build();
+    let http = serenity::http::HttpBuilder::new(discord_token.clone()).build();
 
     // We will fetch the bot's id.
     let (bot_id, bot_name) = http
@@ -181,10 +181,7 @@ impl Handler {
         (command.fun)(cmdctx, captures).await?;
         Ok(())
     }
-}
 
-#[async_trait]
-impl EventHandler for Handler {
     // Set a handler for the `message` event - so that whenever a new message
     // is received - the closure (or function) passed will be called.
     //
@@ -362,6 +359,11 @@ impl EventHandler for Handler {
             }
         };
     }
+}
+
+#[async_trait]
+impl Framework for Handler {
+    async fn dispatch(&self, ctx: &Context, event: &FullEvent) {}
 }
 
 impl Handler {

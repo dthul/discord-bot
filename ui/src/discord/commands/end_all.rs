@@ -60,7 +60,7 @@ fn end_all<'a>(
             | EndAdventureResult::NotYetExpired
             | EndAdventureResult::AlreadyMarkedForDeletion(_) => continue,
         };
-        let channel = channel_id.to_channel(&context.ctx).await;
+        let channel = channel_id.to_guild_channel(&context.ctx).await;
         let channel_name = match &channel {
             Ok(Channel::Guild(channel)) => &channel.name,
             _ => "'unknown'",

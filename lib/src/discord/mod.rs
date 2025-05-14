@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serenity::{
     all::CacheHttp,
     model::{
-        channel::{Channel, PermissionOverwrite, PermissionOverwriteType},
+        channel::{PermissionOverwrite, PermissionOverwriteType},
         id::{ChannelId, UserId},
         permissions::Permissions,
     },
@@ -43,13 +43,9 @@ pub async fn is_host(
     user_id: UserId,
     db_connection: &sqlx::PgPool,
 ) -> Result<bool, crate::meetup::Error> {
-    let channel = if let Channel::Guild(channel) =
-        channel_id.to_channel(&discord_api, Some(GUILD_ID)).await?
-    {
-        channel
-    } else {
-        return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
-    };
+    let channel = channel_id
+        .to_guild_channel(&discord_api, Some(GUILD_ID))
+        .await?;
     // Assume that users with the VIEW_CHANNEL, MANAGE_MESSAGES and
     // MENTION_EVERYONE permission are channel hosts
     let user_permission_overwrites = channel
@@ -96,13 +92,9 @@ pub async fn add_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Channel::Guild(channel) =
-        channel_id.to_channel(discord_api, Some(GUILD_ID)).await?
-    {
-        channel
-    } else {
-        return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
-    };
+    let channel = channel_id
+        .to_guild_channel(discord_api, Some(GUILD_ID))
+        .await?;
     let current_permission_overwrites = channel
         .permission_overwrites
         .iter()
@@ -117,6 +109,7 @@ pub async fn add_channel_user_permissions(
     new_permission_overwrites.allow |= permissions;
     if new_permission_overwrites.allow != current_permission_overwrites.allow {
         channel
+            .id
             .create_permission(&discord_api.http, new_permission_overwrites, None)
             .await?;
         Ok(true)
@@ -135,13 +128,9 @@ pub async fn remove_channel_user_permissions(
     if permissions == Permissions::empty() {
         return Ok(false);
     }
-    let channel = if let Channel::Guild(channel) =
-        channel_id.to_channel(discord_api, Some(GUILD_ID)).await?
-    {
-        channel
-    } else {
-        return Err(simple_error::SimpleError::new("is_host: This is not a guild channel").into());
-    };
+    let channel = channel_id
+        .to_guild_channel(discord_api, Some(GUILD_ID))
+        .await?;
     let current_permission_overwrites = channel
         .permission_overwrites
         .iter()
@@ -159,10 +148,12 @@ pub async fn remove_channel_user_permissions(
             && new_permission_overwrites.deny == Permissions::empty()
         {
             channel
+                .id
                 .delete_permission(&discord_api.http, new_permission_overwrites.kind, None)
                 .await?;
         } else {
             channel
+                .id
                 .create_permission(&discord_api.http, new_permission_overwrites, None)
                 .await?;
         }

@@ -193,6 +193,7 @@ impl EventCollector {
         static_file_prefix: &str,
     ) -> Result<(), crate::meetup::Error> {
         let mut latest_messages = channel_id
+            .widen()
             .messages(&discord_api.http, GetMessages::new().limit(20))
             .await?;
         let relevant_events: Vec<&UpcomingEventDetails> = self
@@ -246,6 +247,7 @@ impl EventCollector {
                     location_events,
                 ));
                 channel_id
+                    .widen()
                     .send_message(&discord_api.http, message_builder)
                     .await?;
             }

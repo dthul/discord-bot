@@ -151,12 +151,13 @@ async fn auth_handler_post(
     // Notify on Discord about new login
     // TODO: maybe only for admins
     if let Ok(user) = discord_id.to_user(&state.discord_cache_http).await {
-        user.direct_message(
-            &state.discord_cache_http.http,
-            CreateMessage::new().content("New web login registered"),
-        )
-        .await
-        .ok();
+        user.id
+            .direct_message(
+                &state.discord_cache_http.http,
+                CreateMessage::new().content("New web login registered"),
+            )
+            .await
+            .ok();
     }
     Ok(response)
 }

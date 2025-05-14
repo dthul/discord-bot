@@ -349,6 +349,7 @@ async fn send_channel_expiration_reminder(
             strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role)
         });
         channel_id
+            .widen()
             .send_message(&discord_api.http, message_builder)
             .await?;
         sqlx::query!("UPDATE event_series_text_channel SET last_expiration_reminder_time = NOW() WHERE discord_id = $1", channel_id.get() as i64).execute(db_connection).await?;

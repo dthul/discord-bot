@@ -581,7 +581,7 @@ async fn sync_channel(
         )
         .await?;
         // Make sure that the channel ID that was returned actually exists on Discord
-        let channel_exists = match channel.to_channel(discord_api, Some(GUILD_ID)).await {
+        let channel_exists = match channel.to_guild_channel(discord_api, Some(GUILD_ID)).await {
             Ok(_) => true,
             Err(err) => {
                 if let serenity::Error::Http(http_err) = &err {
@@ -705,7 +705,7 @@ async fn sync_channel_impl(
     println!(
         "Discord event sync: created new temporary channel {} \"{}\"",
         temp_channel.id.get(),
-        &temp_channel.name
+        &temp_channel.base.name
     );
     let insert_query = match channel_type {
         ChannelType::Text => {
@@ -751,7 +751,7 @@ async fn sync_channel_impl(
             match discord_api
                 .http()
                 .delete_channel(
-                    temp_channel.id,
+                    temp_channel.id.into(),
                     Some("sync_channel_impl transaction failed"),
                 )
                 .await
@@ -1031,6 +1031,7 @@ async fn sync_role_assignments_permissions(
         let message_builder = CreateMessage::new()
             .content(crate::strings::CHANNEL_ADDED_HOSTS(&newly_added_host_ids));
         if let Err(err) = channel_id
+            .widen()
             .send_message(&discord_api.http, message_builder)
             .await
         {
@@ -1044,6 +1045,7 @@ async fn sync_role_assignments_permissions(
         let message_builder = CreateMessage::new()
             .content(crate::strings::CHANNEL_ADDED_PLAYERS(&newly_added_user_ids));
         if let Err(err) = channel_id
+            .widen()
             .send_message(&discord_api.http, message_builder)
             .await
         {
@@ -1126,18 +1128,18 @@ async fn sync_channel_topic(
                 .format("%d.%m.%Y %H:%M")
         ),
     };
-    let channel = channel_id.to_channel(discord_api, Some(GUILD_ID)).await?;
-    if let serenity::model::channel::Channel::Guild(channel) = channel {
-        let topic_needs_update = if let Some(current_topic) = channel.topic {
-            current_topic != topic
-        } else {
-            true
-        };
-        if topic_needs_update {
-            channel_id
-                .edit(&discord_api.http, EditChannel::new().topic(topic))
-                .await?;
-        }
+    let channel = channel_id
+        .to_guild_channel(discord_api, Some(GUILD_ID))
+        .await?;
+    let topic_needs_update = if let Some(current_topic) = channel.topic {
+        current_topic != topic
+    } else {
+        true
+    };
+    if topic_needs_update {
+        channel_id
+            .edit(&discord_api.http, EditChannel::new().topic(topic))
+            .await?;
     }
     Ok(())
 }
@@ -1176,32 +1178,32 @@ async fn sync_channel_category(
         },
         ChannelType::Voice => categories.extend_from_slice(VOICE_CHANNELS_CATEGORY_IDS),
     }
-    let channel = channel_id.to_channel(discord_api, Some(GUILD_ID)).await?;
-    if let serenity::model::channel::Channel::Guild(channel) = channel {
-        let category_needs_update = match channel.parent_id {
-            Some(channel_category) => {
-                if let Some(special_category) = next_event.discord_category {
-                    special_category != channel_category
-                } else {
-                    !categories.contains(&channel_category)
-                }
+    let channel = channel_id
+        .to_guild_channel(discord_api, Some(GUILD_ID))
+        .await?;
+    let category_needs_update = match channel.parent_id {
+        Some(channel_category) => {
+            if let Some(special_category) = next_event.discord_category {
+                special_category != channel_category
+            } else {
+                !categories.contains(&channel_category)
             }
-            None => true,
-        };
-        if category_needs_update {
-            // Try the categories in order and put the channel in the first
-            // one that works. Meetup has an undocumented limit of 50 channels
-            // per category, so an error will be returned if the category is full.
-            for category in categories {
-                if let Ok(_) = channel_id
-                    .edit(
-                        &discord_api.http,
-                        EditChannel::new().category(Some(category)),
-                    )
-                    .await
-                {
-                    break;
-                }
+        }
+        None => true,
+    };
+    if category_needs_update {
+        // Try the categories in order and put the channel in the first
+        // one that works. Meetup has an undocumented limit of 50 channels
+        // per category, so an error will be returned if the category is full.
+        for category in categories {
+            if let Ok(_) = channel_id
+                .edit(
+                    &discord_api.http,
+                    EditChannel::new().category(Some(category)),
+                )
+                .await
+            {
+                break;
             }
         }
     }

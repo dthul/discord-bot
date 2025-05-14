@@ -137,13 +137,15 @@ impl EventCollector {
                                 .unwrap_or_else(|| role_id.mention().to_string());
                             // Let the user know about the new role
                             if let Ok(user) = discord_user_id.to_user(discord_api).await {
-                                user.direct_message(
-                                    discord_api.http(),
-                                    CreateMessage::new()
-                                        .content(crate::strings::NEW_ROLE_ASSIGNED_DM(&role_text)),
-                                )
-                                .await
-                                .ok();
+                                user.id
+                                    .direct_message(
+                                        discord_api.http(),
+                                        CreateMessage::new().content(
+                                            crate::strings::NEW_ROLE_ASSIGNED_DM(&role_text),
+                                        ),
+                                    )
+                                    .await
+                                    .ok();
                             }
                         }
                     }

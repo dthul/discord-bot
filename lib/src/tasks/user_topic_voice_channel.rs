@@ -49,16 +49,11 @@ async fn reset_user_topic_voice_channel(
     } else {
         return Ok(());
     };
-    let voice_channel = voice_channel_id
-        .to_channel(discord_api, Some(GUILD_ID))
+    let mut voice_channel = voice_channel_id
+        .to_guild_channel(discord_api, Some(GUILD_ID))
         .await?;
-    let mut voice_channel = if let Channel::Guild(voice_channel) = voice_channel {
-        voice_channel
-    } else {
-        return Ok(());
-    };
     // Check if the voice channel's name is different from the default
-    if voice_channel.name == DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME {
+    if voice_channel.base.name == DEFAULT_USER_TOPIC_VOICE_CHANNEL_NAME {
         return Ok(());
     }
     // Check if the voice channel is empty
