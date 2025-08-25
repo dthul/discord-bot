@@ -6,7 +6,15 @@ We use sqlx-cli to handle migrations.
 cargo install sqlx-cli --no-default-features --features native-tls,postgres
 ```
 
-# Create a new migration
+# Update cached queries
+
+```bash
+cargo sqlx prepare --workspace -- --all-targets --all-features
+```
+
+# Migrations
+
+## Create a new migration
 
 ```bash
 sqlx migrate add -r <name>
@@ -14,7 +22,7 @@ sqlx migrate add -r <name>
 
 Now edit the newly created `*.up.sql` and `*.down.sql` files in the [migration/](./migrations/) folder.
 
-# Run the migrations
+## Run the migrations
 
 Make sure the database connection information in [.env](./.env) is correct (use the `bottest` or `bot` user respectively), then do:
 

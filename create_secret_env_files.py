@@ -18,15 +18,15 @@ with open("secrets-postgres.sh", "w") as f:
 with open("secrets-prod.sh", "w") as f:
     f.write(f"DISCORD_TOKEN={secrets['DISCORD_TOKEN_PROD']}\n")
     f.write(f"DISCORD_APPLICATION_ID={secrets['DISCORD_APPLICATION_ID_PROD']}\n")
-    f.write(f"SWISSRPG_API_URL={secrets['SWISSRPG_API_URL_PROD']}")
-    f.write(f"SWISSRPG_API_SECRET={secrets['SWISSRPG_API_SECRET_PROD']}")
+    f.write(f"SWISSRPG_API_URL={secrets['SWISSRPG_API_URL_PROD']}\n")
+    f.write(f"SWISSRPG_API_SECRET={secrets['SWISSRPG_API_SECRET_PROD']}\n")
     f.write(f"MEETUP_CLIENT_ID={secrets['MEETUP_CLIENT_ID_PROD']}\n")
     f.write(f"MEETUP_CLIENT_SECRET={secrets['MEETUP_CLIENT_SECRET_PROD']}\n")
     f.write(f"STRIPE_CLIENT_SECRET={secrets['STRIPE_CLIENT_SECRET_PROD']}\n")
     f.write(
         f"STRIPE_WEBHOOK_SIGNING_SECRET={secrets['STRIPE_WEBHOOK_SIGNING_SECRET_PROD']}\n"
     )
-    f.write(f"API_KEY={secrets['API_KEY_PROD']}\n")
+    f.write(f"API_KEYS={secrets['API_KEYS_PROD']}\n")
     f.write(
         f"DATABASE_URL=postgres://{secrets['POSTGRES_USER_PROD']}:{secrets['POSTGRES_PASSWORD_PROD']}@{secrets['POSTGRES_HOST']}/{secrets['POSTGRES_DATABASE_PROD']}"
     )
@@ -35,15 +35,15 @@ with open("secrets-prod.sh", "w") as f:
 with open("secrets-test.sh", "w") as f:
     f.write(f"DISCORD_TOKEN={secrets['DISCORD_TOKEN_TEST']}\n")
     f.write(f"DISCORD_APPLICATION_ID={secrets['DISCORD_APPLICATION_ID_TEST']}\n")
-    f.write(f"SWISSRPG_API_URL={secrets['SWISSRPG_API_URL_TEST']}")
-    f.write(f"SWISSRPG_API_SECRET={secrets['SWISSRPG_API_SECRET_TEST']}")
+    f.write(f"SWISSRPG_API_URL={secrets['SWISSRPG_API_URL_TEST']}\n")
+    f.write(f"SWISSRPG_API_SECRET={secrets['SWISSRPG_API_SECRET_TEST']}\n")
     f.write(f"MEETUP_CLIENT_ID={secrets['MEETUP_CLIENT_ID_TEST']}\n")
     f.write(f"MEETUP_CLIENT_SECRET={secrets['MEETUP_CLIENT_SECRET_TEST']}\n")
     f.write(f"STRIPE_CLIENT_SECRET={secrets['STRIPE_CLIENT_SECRET_TEST']}\n")
     f.write(
         f"STRIPE_WEBHOOK_SIGNING_SECRET={secrets['STRIPE_WEBHOOK_SIGNING_SECRET_TEST']}\n"
     )
-    f.write(f"API_KEY={secrets['API_KEY_TEST']}\n")
+    f.write(f"API_KEYS={secrets['API_KEYS_TEST']}\n")
     f.write(
         f"DATABASE_URL=postgres://{secrets['POSTGRES_USER_TEST']}:{secrets['POSTGRES_PASSWORD_TEST']}@{secrets['POSTGRES_HOST']}/{secrets['POSTGRES_DATABASE_TEST']}"
     )

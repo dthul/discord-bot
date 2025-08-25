@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT discord_id FROM event_series_text_channel WHERE\n        deleted IS NULL AND\n        expiration_time < $1 AND\n        (snooze_until IS NULL OR snooze_until < $1) AND\n        deletion_time IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discord_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "471d371896b6cc5d1187f474b695bd856b4b41f69910ff449bacf15f28a9cc88"
+}
