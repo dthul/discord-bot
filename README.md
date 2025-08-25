@@ -112,7 +112,7 @@ Set a password
 `$ sudo -i -u metabase`
 `$ wget https://downloads.metabase.com/v0.37.8/metabase.jar` (or later version)
 
-## Optional: create a read-only Postgres user for sqlx
+## Optional: create a read-only Postgres user for metabase
 
 `$ sudo -u postgres psql bottest`
 `# CREATE USER metabase WITH PASSWORD '...';`

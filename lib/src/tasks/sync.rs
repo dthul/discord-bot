@@ -1,12 +1,14 @@
-use futures::future::TryFutureExt;
 use futures_util::lock::Mutex;
 use serenity::model::id::UserId;
 use std::sync::Arc;
 use tokio::time::{Duration, Instant};
 
+use crate::{free_spots::EventCollector, swissrpg::client::SwissRPGClient};
+
 pub async fn create_recurring_syncing_task(
     db_connection: sqlx::PgPool,
     redis_client: redis::Client,
+    swissrpg_client: Arc<SwissRPGClient>,
     meetup_client: Arc<Mutex<Option<Arc<crate::meetup::newapi::AsyncClient>>>>,
     discord_api: crate::discord::CacheAndHttp,
     bot_id: UserId,
@@ -23,24 +25,39 @@ pub async fn create_recurring_syncing_task(
         let db_connection = db_connection.clone();
         let redis_client = redis_client.clone();
         let discord_api = discord_api.clone();
+        let swissrpg_client = swissrpg_client.clone();
         let meetup_client = meetup_client.clone();
         tokio::spawn(async move {
             let mut redis_connection = redis_client.get_multiplexed_async_connection().await?;
+            let event_collector = EventCollector::new();
             // Sync with Meetup
-            let event_collector = tokio::time::timeout(
+            match tokio::time::timeout(
                 Duration::from_secs(360),
-                crate::meetup::sync::sync_task(meetup_client.clone(), &db_connection).map_err(
-                    |err| {
-                        eprintln!("Syncing task failed: {}", err);
-                        err
-                    },
-                ),
+                crate::meetup::sync::sync_task(meetup_client.clone(), &db_connection),
             )
-            .map_err(|err| {
-                eprintln!("Syncing task timed out: {}", err);
-                err
-            })
-            .await??;
+            .await
+            {
+                Err(_) => eprintln!("Meetup syncing task timed out"),
+                Ok(sync_result) => {
+                    if let Err(err) = sync_result {
+                        eprintln!("Meetup syncing task failed: {}", err);
+                    }
+                }
+            };
+            // Sync with SwissRPG
+            match tokio::time::timeout(
+                Duration::from_secs(360),
+                crate::swissrpg::sync::sync_task(swissrpg_client.clone(), &db_connection),
+            )
+            .await
+            {
+                Err(_) => eprintln!("SwissRPG syncing task timed out"),
+                Ok(sync_result) => {
+                    if let Err(err) = sync_result {
+                        eprintln!("SwissRPG syncing task failed: {}", err);
+                    }
+                }
+            };
             // Sync with Discord
             if let Err(err) = crate::discord::sync::sync_discord(
                 &mut redis_connection,

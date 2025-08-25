@@ -40,6 +40,10 @@ fn main() {
             .parse::<NonZeroU64>()
             .expect("Could not parse the DISCORD_APPLICATION_ID as a NonZeroU64"),
     );
+    let swissrpg_api_url =
+        env::var("SWISSRPG_API_URL").expect("Found no SWISSRPG_API_URL in environment");
+    let swissrpg_api_secret =
+        env::var("SWISSRPG_API_SECRET").expect("Found no SWISSRPG_API_SECRET in environment");
     let stripe_client_secret =
         env::var("STRIPE_CLIENT_SECRET").expect("Found no STRIPE_CLIENT_SECRET in environment");
     let stripe_webhook_signing_secret = env::var("STRIPE_WEBHOOK_SIGNING_SECRET").ok();
@@ -102,6 +106,12 @@ fn main() {
             }
         }
     };
+
+    // Create SwissRPG API client
+    let swissrpg_client = Arc::new(lib::swissrpg::client::SwissRPGClient::new(
+        swissrpg_api_url,
+        swissrpg_api_secret,
+    ));
 
     // Create a Meetup API client (might not be possible if there is no access token yet)
     let meetup_access_token = async_runtime
@@ -215,6 +225,7 @@ fn main() {
     let syncing_task = lib::tasks::sync::create_recurring_syncing_task(
         pool.clone(),
         redis_client.clone(),
+        swissrpg_client.clone(),
         async_meetup_client.clone(),
         discord_api.clone(),
         bot_id,

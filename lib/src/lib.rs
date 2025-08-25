@@ -11,6 +11,7 @@ pub mod redis;
 pub mod role_shortcode;
 pub mod strings;
 pub mod stripe;
+pub mod swissrpg;
 pub mod tasks;
 pub mod urls;
 
