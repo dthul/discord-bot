@@ -33,6 +33,8 @@ pub struct Session {
 pub struct Event {
     pub uuid: Uuid,
     pub title: String,
+    #[serde(rename = "publicUrl")]
+    pub public_url: String,
     pub organisers: Vec<User>,
     pub description: Option<String>,
     #[serde(rename = "currentSession")]

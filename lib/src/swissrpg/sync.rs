@@ -159,10 +159,11 @@ pub async fn sync_event(
         db_swissrpg_event_id
     } else {
         sqlx::query_scalar!(
-            r#"INSERT INTO swissrpg_event (event_id, swissrpg_id) VALUES ($1, $2)
+            r#"INSERT INTO swissrpg_event (event_id, swissrpg_id, url) VALUES ($1, $2, $3)
             RETURNING id"#,
             db_event_id,
-            event.uuid
+            event.uuid,
+            event_series.public_url
         )
         .fetch_one(&mut *tx)
         .await?
