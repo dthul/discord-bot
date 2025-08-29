@@ -10,15 +10,18 @@ pub async fn sync_task(
     db_connection: &sqlx::PgPool,
 ) -> Result<crate::free_spots::EventCollector, crate::BoxedError> {
     let upcoming_event_series = swissrpg_client.get_events().await?;
-    let event_collector = crate::free_spots::EventCollector::new();
+    let mut event_collector = crate::free_spots::EventCollector::new();
 
     // Filter for upcoming events only
     let now = Utc::now();
 
     for event_series in upcoming_event_series {
-        // TODO: add events to EventCollector
         if let Some(event) = &event_series.current_session {
             if event.start > now {
+                // Add to EventCollector for free spots tracking
+                let common_event = crate::common_event::CommonEventDetails::from((&event_series, event));
+                event_collector.add_event(common_event);
+                
                 match sync_event(&event_series, event, db_connection).await {
                     Err(err) => eprintln!("Event sync failed: {}", err),
                     _ => (),
@@ -29,6 +32,10 @@ pub async fn sync_task(
         // Also process upcoming events
         for event in &event_series.upcoming_sessions {
             if event.start > now {
+                // Add to EventCollector for free spots tracking
+                let common_event = crate::common_event::CommonEventDetails::from((&event_series, event));
+                event_collector.add_event(common_event);
+                
                 match sync_event(&event_series, event, db_connection).await {
                     Err(err) => eprintln!("Event sync failed: {}", err),
                     _ => (),

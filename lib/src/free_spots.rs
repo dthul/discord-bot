@@ -1,7 +1,7 @@
 // While syncing upcoming Meetup events, the code in this file is used to build
 // a list of events with free spots and post those to Discord.
 
-use crate::{meetup::newapi::UpcomingEventDetails, DefaultStr};
+use crate::common_event::CommonEventDetails;
 use geo::{euclidean_distance::EuclideanDistance, Point};
 use lazy_static::lazy_static;
 use serenity::{
@@ -21,7 +21,7 @@ lazy_static! {
 #[derive(Debug, Clone)]
 pub struct EventCollector {
     // List of upcoming events and the number of free spots
-    pub events: Vec<UpcomingEventDetails>,
+    pub events: Vec<CommonEventDetails>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -182,7 +182,7 @@ impl EventCollector {
         EventCollector { events: vec![] }
     }
 
-    pub fn add_event(&mut self, event: UpcomingEventDetails) {
+    pub fn add_event(&mut self, event: CommonEventDetails) {
         self.events.push(event);
     }
 
@@ -195,31 +195,27 @@ impl EventCollector {
         let mut latest_messages = channel_id
             .messages(&discord_api.http, GetMessages::new().limit(20))
             .await?;
-        let relevant_events: Vec<&UpcomingEventDetails> = self
+        let relevant_events: Vec<&CommonEventDetails> = self
             .events
             .iter()
             // Discard events which don't have free spots
             .filter(|event| event.num_free_spots() > 0)
             // Discard events for which RSVPs are not open
             .filter(|event| {
-                let is_closed_event = event
-                    .rsvp_settings
-                    .as_ref()
-                    .and_then(|rsvp_settings| rsvp_settings.rsvps_closed)
-                    .unwrap_or(false)
-                    || CLOSED_REGEX.is_match(event.description.unwrap_or_str(""));
+                let is_closed_event = event.rsvps_closed
+                    || CLOSED_REGEX.is_match(event.description.as_deref().unwrap_or(""));
                 !is_closed_event
             })
             // Discard events which are too far in the future
-            .filter(|event| event.date_time.0 < chrono::Utc::now() + chrono::Duration::days(30))
+            .filter(|event| event.date_time < chrono::Utc::now() + chrono::Duration::days(30))
             .collect();
         let mut localized_events = Self::localized_events(&relevant_events);
         for location in ALL_LOCATIONS {
-            let location_events: &mut [&UpcomingEventDetails] = localized_events
+            let location_events: &mut [&CommonEventDetails] = localized_events
                 .get_mut(location)
                 .map(Vec::as_mut_slice)
                 .unwrap_or(&mut []);
-            location_events.sort_unstable_by_key(|event| event.date_time.0);
+            location_events.sort_unstable_by_key(|event| event.date_time);
             // Try to find an existing message that corresponds to this location
             let embed_author = location.name();
             let location_message = latest_messages.iter_mut().find(|message| {
@@ -256,7 +252,7 @@ impl EventCollector {
     fn build_embed<'a>(
         static_file_prefix: &'_ str,
         location: Location,
-        events: &'_ [&'_ UpcomingEventDetails],
+        events: &'_ [&'_ CommonEventDetails],
     ) -> serenity::builder::CreateEmbed {
         let footer_text = chrono::Utc::now()
             .with_timezone(&chrono_tz::Europe::Zurich)
@@ -270,7 +266,7 @@ impl EventCollector {
                 &mut description,
                 "**{}**\n",
                 // TODO: proper escaping
-                event.title.unwrap_or_str("No title").replace("*", r"\*")
+                event.title.replace("*", r"\*")
             )
             .ok();
             description.push_str(&event.date_time.format("_%a, %b %-d_").to_string());
@@ -310,10 +306,10 @@ impl EventCollector {
     // Returns all events for which a location can be determined, grouped by
     // their respective locations
     fn localized_events<'event>(
-        events: &[&'event UpcomingEventDetails],
-    ) -> HashMap<Location, Vec<&'event UpcomingEventDetails>> {
+        events: &[&'event CommonEventDetails],
+    ) -> HashMap<Location, Vec<&'event CommonEventDetails>> {
         // Try to assign each event to one of our cities or the online category
-        let mut location_events: HashMap<Location, Vec<&UpcomingEventDetails>> = HashMap::new();
+        let mut location_events: HashMap<Location, Vec<&CommonEventDetails>> = HashMap::new();
         for event in events {
             if let Some(location) = Self::event_location(event) {
                 location_events.entry(location).or_default().push(event);
@@ -323,7 +319,7 @@ impl EventCollector {
     }
 
     // Figure out which location (if any) an event belongs to
-    fn event_location(event: &UpcomingEventDetails) -> Option<Location> {
+    fn event_location(event: &CommonEventDetails) -> Option<Location> {
         let venue = match &event.venue {
             Some(venue) => venue,
             None => {
@@ -333,7 +329,7 @@ impl EventCollector {
         };
         // Is this event online?
         if event.is_online
-            || crate::meetup::sync::ONLINE_REGEX.is_match(event.description.unwrap_or_str(""))
+            || crate::meetup::sync::ONLINE_REGEX.is_match(event.description.as_deref().unwrap_or(""))
         {
             return Some(Location::Online);
         }

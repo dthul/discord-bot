@@ -29,7 +29,7 @@ pub async fn create_recurring_syncing_task(
         let meetup_client = meetup_client.clone();
         tokio::spawn(async move {
             let mut redis_connection = redis_client.get_multiplexed_async_connection().await?;
-            let event_collector = EventCollector::new();
+            let mut event_collector = EventCollector::new();
             // Sync with Meetup
             match tokio::time::timeout(
                 Duration::from_secs(360),
@@ -39,8 +39,14 @@ pub async fn create_recurring_syncing_task(
             {
                 Err(_) => eprintln!("Meetup syncing task timed out"),
                 Ok(sync_result) => {
-                    if let Err(err) = sync_result {
-                        eprintln!("Meetup syncing task failed: {}", err);
+                    match sync_result {
+                        Ok(meetup_event_collector) => {
+                            // Merge events from Meetup
+                            for event in meetup_event_collector.events {
+                                event_collector.add_event(event);
+                            }
+                        }
+                        Err(err) => eprintln!("Meetup syncing task failed: {}", err),
                     }
                 }
             };
@@ -53,8 +59,14 @@ pub async fn create_recurring_syncing_task(
             {
                 Err(_) => eprintln!("SwissRPG syncing task timed out"),
                 Ok(sync_result) => {
-                    if let Err(err) = sync_result {
-                        eprintln!("SwissRPG syncing task failed: {}", err);
+                    match sync_result {
+                        Ok(swissrpg_event_collector) => {
+                            // Merge events from SwissRPG
+                            for event in swissrpg_event_collector.events {
+                                event_collector.add_event(event);
+                            }
+                        }
+                        Err(err) => eprintln!("SwissRPG syncing task failed: {}", err),
                     }
                 }
             };

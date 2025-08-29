@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms)]
+pub mod common_event;
 pub mod db;
 pub mod discord;
 pub mod end_adventure;

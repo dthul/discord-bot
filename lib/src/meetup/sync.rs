@@ -57,7 +57,8 @@ pub async fn sync_task(
         match event {
             Err(err) => eprintln!("Couldn't query upcoming event: {}", err),
             Ok(event) => {
-                event_collector.add_event(event.clone());
+                let common_event = crate::common_event::CommonEventDetails::from(event.clone());
+                event_collector.add_event(common_event);
                 match sync_event(event, db_connection).await {
                     Err(err) => eprintln!("Event sync failed: {}", err),
                     _ => (),

@@ -5,7 +5,7 @@ use serenity::{all::Mentionable, builder::CreateMessage, model::id::RoleId};
 use simple_error::SimpleError;
 
 use super::free_spots::EventCollector;
-use crate::{db, DefaultStr};
+use crate::db;
 
 impl EventCollector {
     pub async fn assign_roles(
@@ -26,7 +26,7 @@ impl EventCollector {
         for event in &self.events {
             // Check whether this event uses the role shortcode
             let role_captures =
-                crate::meetup::sync::ROLE_REGEX.captures_iter(event.description.unwrap_or_str(""));
+                crate::meetup::sync::ROLE_REGEX.captures_iter(event.description.as_deref().unwrap_or(""));
             let roles = {
                 let mut roles = vec![];
                 for captures in role_captures {
@@ -34,8 +34,8 @@ impl EventCollector {
                         match role_id.as_str().parse::<u64>() {
                             Ok(id) => roles.push(RoleId::new(id)),
                             _ => eprintln!(
-                                "Meetup event {} specifies invalid role id {}",
-                                event.id,
+                                "Event {} specifies invalid role id {}",
+                                event.title,
                                 role_id.as_str()
                             ),
                         }
@@ -43,17 +43,27 @@ impl EventCollector {
                 }
                 roles
             };
-            let title = event.title.unwrap_or_str("No title");
+            let title = &event.title;
             if roles.is_empty() {
                 println!("Role shortcode: skipping {}", title);
                 continue;
             }
             println!("Role shortcode: event {} has role(s)", title);
+            // Skip SwissRPG events for now - only process Meetup events
+            // Check if this looks like a Meetup ID (should be parseable as i64)
+            let meetup_id = match event.id.parse::<i64>() {
+                Ok(id) => id,
+                Err(_) => {
+                    println!("Role shortcode: skipping non-Meetup event {}", title);
+                    continue;
+                }
+            };
+            
             // Some events (games) might already have their RSVPs stored in the database.
             // For the others we query Meetup.
             let db_event_id = sqlx::query!(
                 r#"SELECT event.id FROM meetup_event INNER JOIN event ON meetup_event.event_id = event.id WHERE meetup_event.meetup_id = $1"#,
-                event.id.0
+                meetup_id.to_string()
             )
             .map(|row| db::EventId(row.id))
             .fetch_optional(db_connection)
@@ -74,7 +84,7 @@ impl EventCollector {
                     title
                 );
                 let meetup_participant_ids: Vec<_> =
-                    match meetup_client.get_tickets_vec(event.id.0.clone()).await {
+                    match meetup_client.get_tickets_vec(meetup_id.to_string()).await {
                         Err(err) => {
                             eprintln!("Error in assign_roles::get_rsvps:\n{:#?}", err);
                             continue;
