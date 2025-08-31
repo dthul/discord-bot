@@ -158,6 +158,7 @@ async fn schedule_session_handler(
     }
 }
 
+#[tracing::instrument(skip(state, form_data), fields(flow_id = %flow_id))]
 async fn schedule_session_post_handler(
     Extension(state): Extension<Arc<State>>,
     Path(flow_id): Path<u64>,

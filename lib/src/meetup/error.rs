@@ -37,7 +37,7 @@ impl std::error::Error for Error {
             // Error::APIError(err) => Some(err),
             Error::NewAPIError(err) => Some(err),
             Error::OAuthError(_err) => None,
-            Error::CommonError(err) => Some(err),
+            Error::CommonError(err) => err.source(),
         }
     }
 }

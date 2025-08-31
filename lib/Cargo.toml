@@ -20,6 +20,7 @@ chrono-tz = "0.9"
 # cynic = { version = "1.0", features = ["reqwest"] }
 # Custom fork of cynic to disable reqwest default features (which pull in native-tls). The next official release of cynic should have this fix
 # cynic = { git = "https://github.com/dthul/cynic", branch = "v1.0.0" }
+eyre = "0.6"
 futures = "0.3"
 futures-util = "0.3"
 geo = { version = "0.27", default-features = false }
@@ -39,6 +40,8 @@ serenity = { version = "0.12", default-features = false, features = ["cache", "c
 simple-error = "0.3"
 sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "chrono", "uuid" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
+tracing = "0.1"
+tracing-error = "0.2"
 unicode-segmentation = "1.7"
 url = "2.1"
 uuid = { version = "1.0", features = ["v4", "serde"] }

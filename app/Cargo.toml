@@ -5,6 +5,11 @@ authors = ["Daniel Thul <daniel.thul@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "swissrpg-app"
+path = "src/bin/swissrpg_app.rs"
+
 [features]
 # bottest feature not enabled by default
 default = []
@@ -15,6 +20,7 @@ bottest = ["lib/bottest", "ui/bottest"]
 lib = { path = "../lib", package = "swissrpg-lib" }
 ui = { path = "../ui", package = "swissrpg-ui" }
 async-stripe = { version = "0.29", default-features = false, features = ["runtime-tokio-hyper-rustls", "billing", "webhook-events", "checkout", "connect"] }
+eyre = "0.6"
 futures = "0.3"
 futures-channel = "0.3"
 futures-util = "0.3"
@@ -23,3 +29,6 @@ serenity = { version = "0.12", default-features = false, features = ["cache", "c
 signal-hook = "0.3"
 sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "chrono" ] }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "time"] }
+tracing = "0.1"
+tracing-error = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

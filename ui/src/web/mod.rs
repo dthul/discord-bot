@@ -5,7 +5,7 @@ pub mod schedule_session;
 pub mod server;
 pub mod stripe_webhook_endpoint;
 
-use std::{backtrace::Backtrace, borrow::Cow};
+use std::borrow::Cow;
 
 use askama::Template;
 use axum::{
@@ -107,10 +107,7 @@ impl From<RedisError> for WebError {
 
 impl From<InvalidHeaderValue> for WebError {
     fn from(err: InvalidHeaderValue) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }
 
@@ -127,63 +124,42 @@ impl From<RequestTokenError> for WebError {
 
 impl From<lib::meetup::newapi::Error> for WebError {
     fn from(err: lib::meetup::newapi::Error) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }
 
 impl From<sqlx::Error> for WebError {
     fn from(err: sqlx::Error) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }
 
 impl From<oauth2::url::ParseError> for WebError {
     fn from(err: oauth2::url::ParseError) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }
 
 impl From<askama::Error> for WebError {
     fn from(err: askama::Error) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }
 
 impl From<axum::http::Error> for WebError {
     fn from(err: axum::http::Error) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }
 
 impl From<simple_error::SimpleError> for WebError {
     fn from(err: simple_error::SimpleError) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }
 
 impl From<InvalidUri> for WebError {
     fn from(err: InvalidUri) -> Self {
-        WebError::Other(BoxedError {
-            inner: Box::new(err),
-            backtrace: Backtrace::force_capture(),
-        })
+        WebError::Other(err.into())
     }
 }

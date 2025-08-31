@@ -83,6 +83,7 @@ impl SwissRPGClient {
         Ok(tags)
     }
 
+    #[tracing::instrument(skip(self, request), fields(event_uuid = %event_uuid))]
     pub async fn schedule_session(
         &self,
         event_uuid: &uuid::Uuid,

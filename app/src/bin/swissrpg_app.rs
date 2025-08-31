@@ -14,7 +14,31 @@ use futures::future;
 use serenity::all::ApplicationId;
 use sqlx::{postgres::PgPoolOptions, Executor};
 
+fn init_tracing_and_errors() {
+    use tracing_subscriber::prelude::*;
+    
+    // Install the tracing error layer that captures span traces
+    let error_layer = tracing_error::ErrorLayer::default();
+    
+    // Set up tracing subscriber with environment filter
+    // Default to "warn" level if no RUST_LOG is set
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+    
+    tracing_subscriber::registry()
+        .with(error_layer)
+        .with(tracing_subscriber::fmt::layer())
+        .with(env_filter)
+        .init();
+    
+    // Install the default eyre handler - tracing-error will automatically integrate
+    eyre::set_hook(Box::new(eyre::DefaultHandler::default_with)).expect("Failed to install eyre hook");
+}
+
 fn main() {
+    // Initialize tracing and error reporting
+    init_tracing_and_errors();
+    
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
     let is_test_environment = match environment.as_str() {
         "prod" => false,
@@ -185,6 +209,7 @@ fn main() {
         redis_client.clone(),
         pool.clone(),
         async_meetup_client.clone(),
+        swissrpg_client.clone(),
         discord_api.clone(),
         bot_name,
         stripe_webhook_signing_secret,

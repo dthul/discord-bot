@@ -3,6 +3,7 @@ use rand::Rng;
 use redis::AsyncCommands;
 
 use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput, swissrpg::client::SwissRPGClient};
+use eyre::Context;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -50,6 +51,7 @@ impl ScheduleSessionFlow {
         Ok(flow)
     }
 
+    #[tracing::instrument(skip(self, db_connection, redis_connection, meetup_client, swissrpg_client), fields(flow_id = %self.id, event_series_id = %self.event_series_id.0))]
     pub async fn schedule<'a>(
         self,
         db_connection: sqlx::PgPool,
@@ -167,6 +169,7 @@ impl ScheduleSessionFlow {
         Ok(new_event)
     }
     
+    #[tracing::instrument(skip(self, db_connection, redis_connection, swissrpg_client, latest_event), fields(flow_id = %self.id, event_series_id = %self.event_series_id.0, latest_event_id = %latest_event.id.0))]
     async fn schedule_swissrpg_event(
         self,
         db_connection: sqlx::PgPool,
@@ -188,10 +191,15 @@ impl ScheduleSessionFlow {
             self.event_series_id.0
         )
         .fetch_one(&db_connection)
-        .await?;
+        .await
+        .with_context(|| format!("Failed to fetch SwissRPG event series ID for event series {}", self.event_series_id.0))?;
         
         let swissrpg_event_series_id = swissrpg_event_series_id.ok_or_else(|| {
-            simple_error::SimpleError::new("Event series does not have a SwissRPG event series ID")
+            tracing::error!(
+                event_series_id = %self.event_series_id.0,
+                "Event series does not have a SwissRPG event series ID set. This might indicate a migration issue or a series that was created before SwissRPG support was added."
+            );
+            eyre::eyre!("Event series {} does not have a SwissRPG event series ID", self.event_series_id.0)
         })?;
         
         // Create a new session via SwissRPG API using the event series ID
@@ -201,7 +209,9 @@ impl ScheduleSessionFlow {
             include_players: true,
         };
         
-        let updated_event = swissrpg_client.schedule_session(&swissrpg_event_series_id, schedule_request).await?;
+        let updated_event = swissrpg_client.schedule_session(&swissrpg_event_series_id, schedule_request)
+            .await
+            .with_context(|| format!("Failed to schedule SwissRPG session for event series {}", swissrpg_event_series_id))?;
         
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;

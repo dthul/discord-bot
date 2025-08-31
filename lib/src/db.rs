@@ -278,6 +278,7 @@ pub async fn get_last_event_in_series(
 }
 
 // Queries all events belonging to the specified series from latest to oldest
+#[tracing::instrument(skip(db_connection), fields(event_series_id = %series_id.0))]
 pub async fn get_events_for_series(
     db_connection: &sqlx::PgPool,
     series_id: EventSeriesId,

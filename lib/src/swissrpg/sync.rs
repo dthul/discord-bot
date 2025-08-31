@@ -5,6 +5,7 @@ use crate::{db, swissrpg::client::SwissRPGClient};
 
 use super::schema::{Event, Session};
 
+#[tracing::instrument(skip(swissrpg_client, db_connection))]
 pub async fn sync_task(
     swissrpg_client: Arc<SwissRPGClient>,
     db_connection: &sqlx::PgPool,
@@ -46,6 +47,7 @@ pub async fn sync_task(
     Ok(event_collector)
 }
 
+#[tracing::instrument(skip(event_series, event, db_connection), fields(event_series_uuid = %event_series.uuid, session_uuid = %event.uuid, event_series_title = %event_series.title))]
 pub async fn sync_event(
     event_series: &Event,
     event: &Session,
