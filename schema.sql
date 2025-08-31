@@ -44,9 +44,11 @@ CREATE TABLE event_series (
     discord_host_role_id bigint UNIQUE REFERENCES event_series_host_role (discord_id),
     discord_category_id bigint,
     "type" text NOT NULL REFERENCES event_series_type ("type"),
-    redis_series_id text UNIQUE
+    redis_series_id text UNIQUE,
+    swissrpg_event_series_id uuid UNIQUE
 );
 ALTER SEQUENCE event_series_id_seq OWNED BY event_series.id;
+CREATE INDEX event_series_swissrpg_event_series_id_idx ON event_series USING btree (swissrpg_event_series_id);
 
 CREATE SEQUENCE event_id_seq START WITH 1000;
 CREATE TABLE event (
