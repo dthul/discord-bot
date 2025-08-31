@@ -176,19 +176,32 @@ impl ScheduleSessionFlow {
         date_time: chrono::DateTime<chrono::Utc>,
         _is_open_event: bool,
     ) -> Result<crate::swissrpg::schema::Event, crate::BoxedError> {
-        // For SwissRPG, we need to find the event UUID from the SwissRPG event
-        let swissrpg_event = latest_event.swissrpg_event.as_ref().ok_or_else(|| {
+        // For SwissRPG, we need to find the SwissRPG event series ID (not the individual session ID)
+        let _swissrpg_event = latest_event.swissrpg_event.as_ref().ok_or_else(|| {
             simple_error::SimpleError::new("Latest event is not a SwissRPG event")
         })?;
         
-        // Create a new session via SwissRPG API
+        // Get the SwissRPG event series ID from the event_series table
+        let swissrpg_event_series_id = sqlx::query_scalar!(
+            r#"SELECT swissrpg_event_series_id FROM event_series 
+               WHERE id = $1"#,
+            self.event_series_id.0
+        )
+        .fetch_one(&db_connection)
+        .await?;
+        
+        let swissrpg_event_series_id = swissrpg_event_series_id.ok_or_else(|| {
+            simple_error::SimpleError::new("Event series does not have a SwissRPG event series ID")
+        })?;
+        
+        // Create a new session via SwissRPG API using the event series ID
         let schedule_request = crate::swissrpg::schema::ScheduleSessionRequest {
             start: date_time.format("%Y-%m-%d %H:%M").to_string(),
             duration: 240, // 4 hours default duration
             include_players: true,
         };
         
-        let updated_event = swissrpg_client.schedule_session(&swissrpg_event.swissrpg_id, schedule_request).await?;
+        let updated_event = swissrpg_client.schedule_session(&swissrpg_event_series_id, schedule_request).await?;
         
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
