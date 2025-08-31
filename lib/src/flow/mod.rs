@@ -2,7 +2,14 @@ use futures_util::FutureExt;
 use rand::Rng;
 use redis::AsyncCommands;
 
-use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput};
+use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput, swissrpg::client::SwissRPGClient};
+use std::sync::Arc;
+
+#[derive(Debug)]
+pub enum ScheduleSessionResult {
+    Meetup(crate::meetup::newapi::NewEventResponse),
+    SwissRPG(crate::swissrpg::schema::Event),
+}
 
 pub struct ScheduleSessionFlow {
     pub id: u64,
@@ -47,11 +54,11 @@ impl ScheduleSessionFlow {
         self,
         db_connection: sqlx::PgPool,
         mut redis_connection: redis::aio::MultiplexedConnection,
-        meetup_client: &'a crate::meetup::newapi::AsyncClient,
-        // oauth2_consumer: &'a crate::meetup::oauth2::OAuth2Consumer,
+        meetup_client: Option<&'a crate::meetup::newapi::AsyncClient>,
+        swissrpg_client: Option<Arc<SwissRPGClient>>,
         date_time: chrono::DateTime<chrono::Utc>,
         is_open_event: bool,
-    ) -> Result<crate::meetup::newapi::NewEventResponse, crate::meetup::Error> {
+    ) -> Result<ScheduleSessionResult, crate::BoxedError> {
         let events = db::get_events_for_series(&db_connection, self.event_series_id).await?;
         let latest_event = if let Some(event) = events.first() {
             event
@@ -61,21 +68,68 @@ impl ScheduleSessionFlow {
             )
             .into());
         };
-        // Find the latest event in the series which was published on Meetup
-        let latest_meetup_event = events.iter().find_map(|event| {
-            if let Some(meetup_event) = &event.meetup_event {
-                Some(meetup_event)
-            } else {
-                None
+        
+        // Determine which API to use based on the latest event's source
+        match latest_event.source() {
+            Some(db::EventSource::Meetup) => {
+                let meetup_client = meetup_client.ok_or_else(|| {
+                    simple_error::SimpleError::new("Meetup client not available")
+                })?;
+                
+                // Find the latest Meetup event in the series
+                let latest_meetup_event = events.iter().find_map(|event| {
+                    if let Some(meetup_event) = &event.meetup_event {
+                        Some(meetup_event)
+                    } else {
+                        None
+                    }
+                });
+                let latest_meetup_event = latest_meetup_event.ok_or_else(|| {
+                    simple_error::SimpleError::new("Could not find a Meetup event to clone")
+                })?;
+                
+                self.schedule_meetup_event(
+                    db_connection,
+                    redis_connection,
+                    meetup_client,
+                    latest_event,
+                    latest_meetup_event,
+                    date_time,
+                    is_open_event,
+                ).await.map(ScheduleSessionResult::Meetup)
+            },
+            Some(db::EventSource::SwissRPG) => {
+                let swissrpg_client = swissrpg_client.ok_or_else(|| {
+                    simple_error::SimpleError::new("SwissRPG client not available")
+                })?;
+                
+                self.schedule_swissrpg_event(
+                    db_connection,
+                    redis_connection,
+                    swissrpg_client,
+                    latest_event,
+                    date_time,
+                    is_open_event,
+                ).await.map(ScheduleSessionResult::SwissRPG)
+            },
+            None => {
+                Err(simple_error::SimpleError::new(
+                    "Could not determine the source of the latest event (neither Meetup nor SwissRPG)"
+                ).into())
             }
-        });
-        let latest_meetup_event = if let Some(event) = latest_meetup_event {
-            event
-        } else {
-            return Err(
-                simple_error::SimpleError::new("Could not find a Meetup event to clone").into(),
-            );
-        };
+        }
+    }
+    
+    async fn schedule_meetup_event<'a>(
+        self,
+        db_connection: sqlx::PgPool,
+        mut redis_connection: redis::aio::MultiplexedConnection,
+        meetup_client: &'a crate::meetup::newapi::AsyncClient,
+        latest_event: &db::Event,
+        latest_meetup_event: &db::MeetupEvent,
+        date_time: chrono::DateTime<chrono::Utc>,
+        is_open_event: bool,
+    ) -> Result<crate::meetup::newapi::NewEventResponse, crate::BoxedError> {
         // Clone the Meetup event
         let new_event_hook = Box::new(|mut new_event: CreateEventInput| {
             new_event.title = latest_event.title.clone();
@@ -95,34 +149,13 @@ impl ScheduleSessionFlow {
             Some(new_event_hook),
         )
         .await?;
-        // // Try to transfer the RSVPs to the new event
-        // let rsvp_result = match crate::meetup::util::clone_rsvps(
-        //     &latest_event.urlname,
-        //     &latest_event.id,
-        //     &new_event.id,
-        //     &mut redis_connection,
-        //     meetup_client,
-        //     oauth2_consumer,
-        // )
-        // .await
-        // {
-        //     Ok(result) => Some(result),
-        //     Err(err) => {
-        //         eprintln!("Could not transfer all RSVPs to the new event.\n{:#?}", err);
-        //         None
-        //     }
-        // };
+        
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
         let sync_future = {
             let new_event = new_event.clone();
-            // let rsvps = rsvp_result.as_ref().map(|res| res.cloned_rsvps.clone());
             async move {
                 crate::meetup::sync::sync_event(new_event.into(), &db_connection).await?;
-                // if let Some(rsvps) = rsvps {
-                //     crate::meetup::sync::sync_rsvps(&event_id, rsvps, &mut redis_connection)
-                //         .await?;
-                // }
                 Ok::<_, crate::meetup::Error>(())
             }
         };
@@ -132,6 +165,59 @@ impl ScheduleSessionFlow {
             }
         }));
         Ok(new_event)
+    }
+    
+    async fn schedule_swissrpg_event(
+        self,
+        db_connection: sqlx::PgPool,
+        mut redis_connection: redis::aio::MultiplexedConnection,
+        swissrpg_client: Arc<SwissRPGClient>,
+        latest_event: &db::Event,
+        date_time: chrono::DateTime<chrono::Utc>,
+        _is_open_event: bool,
+    ) -> Result<crate::swissrpg::schema::Event, crate::BoxedError> {
+        // For SwissRPG, we need to find the event UUID from the SwissRPG event
+        let swissrpg_event = latest_event.swissrpg_event.as_ref().ok_or_else(|| {
+            simple_error::SimpleError::new("Latest event is not a SwissRPG event")
+        })?;
+        
+        // Create a new session via SwissRPG API
+        let schedule_request = crate::swissrpg::schema::ScheduleSessionRequest {
+            start: date_time.format("%Y-%m-%d %H:%M").to_string(),
+            duration: 240, // 4 hours default duration
+            include_players: true,
+        };
+        
+        let updated_event = swissrpg_client.schedule_session(&swissrpg_event.swissrpg_id, schedule_request).await?;
+        
+        let redis_key = format!("flow:schedule_session:{}", self.id);
+        let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
+        
+        // No need to sync - the SwissRPG sync task will pick this up
+        Ok(updated_event)
+    }
+    
+    fn increment_session_title(title: &str) -> String {
+        // This logic is similar to the one used in new_event_hook for Meetup events
+        let title_captures = crate::meetup::sync::SESSION_REGEX.captures_iter(title);
+        
+        // Match the rightmost occurrence of " Session X" in the event name.
+        let (title_only, session_number) = if let Some(capture) = title_captures.last() {
+            // If there is a match, increase the number
+            let session_number = capture.name("number").unwrap().as_str();
+            let session_number = session_number.parse::<i32>().unwrap_or(1);
+            
+            // Find the range of the " Session X" match and remove it from the string
+            let session_x_match = capture.get(0).unwrap();
+            let mut title_only = title.to_string();
+            title_only.truncate(session_x_match.start());
+            (title_only, session_number)
+        } else {
+            // If there is no match, return the whole name and Session number 1
+            (title.to_string(), 1)
+        };
+        
+        format!("{} Session {}", title_only, session_number + 1)
     }
 
     pub async fn delete(

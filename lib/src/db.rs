@@ -73,11 +73,21 @@ pub struct DiscordChannelId(pub u64);
 #[sqlx(transparent)]
 pub struct MemberId(pub i32);
 
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[sqlx(transparent)]
+pub struct SwissRPGEventId(pub i32);
+
 pub struct MeetupEvent {
     pub id: MeetupEventId,
     pub meetup_id: String,
     pub url: String,
     pub urlname: String,
+}
+
+pub struct SwissRPGEvent {
+    pub id: SwissRPGEventId,
+    pub swissrpg_id: uuid::Uuid,
+    pub url: String,
 }
 
 pub struct Event {
@@ -88,6 +98,23 @@ pub struct Event {
     pub is_online: bool,
     pub discord_category: Option<ChannelId>,
     pub meetup_event: Option<MeetupEvent>,
+    pub swissrpg_event: Option<SwissRPGEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EventSource {
+    Meetup,
+    SwissRPG,
+}
+
+impl Event {
+    pub fn source(&self) -> Option<EventSource> {
+        match (&self.meetup_event, &self.swissrpg_event) {
+            (Some(_), None) => Some(EventSource::Meetup),
+            (None, Some(_)) => Some(EventSource::SwissRPG),
+            _ => None, // Neither or both (shouldn't happen)
+        }
+    }
 }
 
 struct EventQueryHelper {
@@ -101,6 +128,9 @@ struct EventQueryHelper {
     meetup_event_meetup_id: Option<String>,
     meetup_event_url: Option<String>,
     meetup_event_urlname: Option<String>,
+    swissrpg_event_id: Option<i32>,
+    swissrpg_event_swissrpg_id: Option<uuid::Uuid>,
+    swissrpg_event_url: Option<String>,
 }
 
 pub struct Member {
@@ -169,6 +199,20 @@ impl From<EventQueryHelper> for Event {
             }),
             _ => None,
         };
+        
+        let swissrpg_event = match (
+            row.swissrpg_event_id,
+            row.swissrpg_event_swissrpg_id,
+            row.swissrpg_event_url,
+        ) {
+            (Some(id), Some(swissrpg_id), Some(url)) => Some(SwissRPGEvent {
+                id: SwissRPGEventId(id),
+                swissrpg_id: swissrpg_id,
+                url: url,
+            }),
+            _ => None,
+        };
+        
         Event {
             id: EventId(row.event_id),
             title: row.title,
@@ -177,6 +221,7 @@ impl From<EventQueryHelper> for Event {
             is_online: row.is_online,
             discord_category: row.discord_category_id.map(|id| ChannelId::new(id as u64)),
             meetup_event: meetup_event,
+            swissrpg_event: swissrpg_event,
         }
     }
 }
@@ -198,9 +243,10 @@ pub async fn get_next_event_in_series(
 ) -> Result<Option<Event>, crate::meetup::Error> {
     let next_event = sqlx::query_as!(
         EventQueryHelper,
-        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
+        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?", swissrpg_event.id as "swissrpg_event_id?", swissrpg_event.swissrpg_id as "swissrpg_event_swissrpg_id?", swissrpg_event.url as "swissrpg_event_url?"
         FROM event
         LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
+        LEFT OUTER JOIN swissrpg_event ON event.id = swissrpg_event.event_id
         WHERE event_series_id = $1 AND start_time > now() AND event.deleted IS NULL
         ORDER BY start_time
         FETCH FIRST ROW ONLY"#,
@@ -217,9 +263,10 @@ pub async fn get_last_event_in_series(
 ) -> Result<Option<Event>, crate::meetup::Error> {
     let last_event = sqlx::query_as!(
         EventQueryHelper,
-        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
+        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?", swissrpg_event.id as "swissrpg_event_id?", swissrpg_event.swissrpg_id as "swissrpg_event_swissrpg_id?", swissrpg_event.url as "swissrpg_event_url?"
         FROM event
         LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
+        LEFT OUTER JOIN swissrpg_event ON event.id = swissrpg_event.event_id
         WHERE event_series_id = $1 AND event.deleted IS NULL
         ORDER BY start_time DESC
         FETCH FIRST ROW ONLY"#,
@@ -237,9 +284,10 @@ pub async fn get_events_for_series(
 ) -> Result<Vec<Event>, crate::meetup::Error> {
     let events = sqlx::query_as!(
         EventQueryHelper,
-        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
+        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?", swissrpg_event.id as "swissrpg_event_id?", swissrpg_event.swissrpg_id as "swissrpg_event_swissrpg_id?", swissrpg_event.url as "swissrpg_event_url?"
         FROM event
         LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
+        LEFT OUTER JOIN swissrpg_event ON event.id = swissrpg_event.event_id
         WHERE event_series_id = $1 AND event.deleted IS NULL
         ORDER BY start_time DESC"#,
         series_id.0
@@ -257,9 +305,10 @@ pub async fn get_upcoming_events_for_series(
 ) -> Result<Vec<Event>, crate::meetup::Error> {
     let events = sqlx::query_as!(
         EventQueryHelper,
-        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?"
+        r#"SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as "meetup_event_id?", meetup_event.meetup_id as "meetup_event_meetup_id?", meetup_event.url as "meetup_event_url?", meetup_event.urlname as "meetup_event_urlname?", swissrpg_event.id as "swissrpg_event_id?", swissrpg_event.swissrpg_id as "swissrpg_event_swissrpg_id?", swissrpg_event.url as "swissrpg_event_url?"
         FROM event
         LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id
+        LEFT OUTER JOIN swissrpg_event ON event.id = swissrpg_event.event_id
         WHERE event_series_id = $1 AND event.start_time > NOW() AND event.deleted IS NULL
         ORDER BY start_time"#,
         series_id.0

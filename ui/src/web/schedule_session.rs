@@ -10,7 +10,7 @@ use axum::{
 };
 use chrono::{offset::TimeZone, Datelike, NaiveDateTime, Timelike};
 use chrono_tz::Europe;
-use lib::{db, DefaultStr};
+use lib::db;
 use serenity::all::Mentionable;
 
 use super::{server::State, MessageTemplate, WebError};
@@ -150,7 +150,8 @@ async fn schedule_session_handler(
                 link: event
                     .meetup_event
                     .as_ref()
-                    .map(|meetup_event| meetup_event.url.as_str()),
+                    .map(|meetup_event| meetup_event.url.as_str())
+                    .or_else(|| event.swissrpg_event.as_ref().map(|swissrpg_event| swissrpg_event.url.as_str())),
             };
             Ok(template.into_response())
         }
@@ -254,105 +255,73 @@ async fn schedule_session_post_handler(
     };
     // Convert time to UTC
     let date_time = date_time.with_timezone(&chrono::Utc);
-    let meetup_client = match *(state.async_meetup_client).lock().await {
-        Some(ref meetup_client) => meetup_client.clone(),
-        None => {
-            let template: MessageTemplate =
-                ("Meetup API unavailable", "Please try again later").into();
+    let meetup_client_guard = state.async_meetup_client.lock().await;
+    let meetup_client = meetup_client_guard.as_deref();
+    
+    // Capture the event series ID before moving the flow
+    let event_series_id = flow.event_series_id;
+    
+    // Use the new unified scheduling approach
+    let schedule_result = flow.schedule(
+        state.pool.clone(),
+        redis_connection,
+        meetup_client,
+        Some(state.swissrpg_client.clone()),
+        date_time,
+        is_open_game,
+    ).await;
+    
+    let (new_event_title, new_event_url, is_meetup) = match &schedule_result {
+        Ok(lib::flow::ScheduleSessionResult::Meetup(meetup_event)) => {
+            (meetup_event.title.clone().unwrap_or_else(|| "No title".to_string()), meetup_event.event_url.clone(), true)
+        },
+        Ok(lib::flow::ScheduleSessionResult::SwissRPG(swissrpg_event)) => {
+            (swissrpg_event.title.clone(), swissrpg_event.public_url.clone(), false)
+        },
+        Err(err) => {
+            let template: MessageTemplate = ("Scheduling failed", format!("Error: {}", err)).into();
             return Ok(template.into_response());
         }
     };
-    // We go from the latest event to the oldest event until we find one
-    // that has not been deleted to use as a template
-    let event_series_id = flow.event_series_id.clone();
-    let events = db::get_events_for_series(&state.pool, event_series_id).await?;
-    for event in events {
-        let meetup_event = if let Some(meetup_event) = event.meetup_event {
-            meetup_event
+    
+    // Only close RSVPs for Meetup events for now
+    let rsvps_are_closed = if is_meetup {
+        if let Some(meetup_client) = meetup_client {
+            // For Meetup events, we need to extract the event ID from the URL or result
+            // This is a simplified approach - in practice you'd want to get the ID from the result
+            match &schedule_result {
+                Ok(lib::flow::ScheduleSessionResult::Meetup(meetup_event)) => {
+                    if let Err(err) = meetup_client.close_rsvps(meetup_event.id.0.clone()).await {
+                        eprintln!("RSVPs could not be closed: {:#?}", err);
+                        false
+                    } else {
+                        true
+                    }
+                }
+                _ => false,
+            }
         } else {
-            continue;
-        };
-        let new_event_hook = Box::new(|mut new_event: lib::meetup::newapi::NewEvent| {
-            new_event.duration = Some(chrono::Duration::minutes(duration as i64).into());
-            new_event.publish_status =
-                Some(lib::meetup::newapi::create_event_mutation::PublishStatus::PUBLISHED);
-            let result = lib::flow::ScheduleSessionFlow::new_event_hook(
-                new_event,
-                date_time,
-                &meetup_event.meetup_id,
-                is_open_game,
-            );
-            if let Ok(event_input) = &result {
-                println!(
-                    "Trying to create a Meetup event with the following details:\n{:#?}",
-                    event_input
-                );
-            }
-            result
-        }) as _;
-        let new_event = match lib::meetup::util::clone_event(
-            &meetup_event.urlname,
-            &meetup_event.meetup_id,
-            &meetup_client,
-            Some(new_event_hook),
-        )
-        .await
-        {
-            Err(lib::meetup::Error::NewAPIError(lib::meetup::newapi::Error::ResourceNotFound)) => {
-                // Event was deleted, try the next one
-                continue;
-            }
-            Err(err) => return Err(err.into()),
-            Ok(new_event) => new_event,
-        };
-        // Delete the flow, ignoring errors
-        if let Err(err) = flow.delete(&mut redis_connection).await {
-            eprintln!(
-                "Encountered an error when trying to delete a schedule session flow:\n{:#?}",
-                err
-            );
+            false
         }
-        let transferred_all_rsvps = if transfer_rsvps {
-            // // Try to transfer the RSVPs to the new event
-            // if let Err(_) = lib::meetup::util::clone_rsvps(
-            //     &event.urlname,
-            //     &event.id,
-            //     &new_event.id,
-            //     redis_connection,
-            //     &meetup_client,
-            //     oauth2_consumer.as_ref(),
-            // )
-            // .await
-            // {
-            //     Some(false)
-            // } else {
-            //     Some(true)
-            // }
-            Some(false)
-        } else {
-            None
-        };
-        // // Close the RSVPs, ignoring errors
-        let rsvps_are_closed =
-            if let Err(err) = meetup_client.close_rsvps(new_event.id.0.clone()).await {
-                eprintln!(
-                    "RSVPs for event {} could not be closed:\n{:#?}",
-                    &new_event.id, err
-                );
-                false
-            } else {
-                true
-            };
-        // Remove any possibly existing channel snoozes
+    } else {
+        false // SwissRPG events handle their own RSVP state
+    };
+
+    // Remove any possibly existing channel snoozes
+    {
+        let mut tx = state.pool.begin().await?;
+        if let Ok(Some(channel_id)) =
+            lib::get_series_text_channel(event_series_id, &mut tx).await
         {
-            let mut tx = state.pool.begin().await?;
-            if let Ok(Some(channel_id)) =
-                lib::get_series_text_channel(event_series_id, &mut tx).await
-            {
-                sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.get() as i64).execute(&mut *tx).await.ok();
-                tx.commit().await.ok();
-            }
+            sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.get() as i64).execute(&mut *tx).await.ok();
+            tx.commit().await.ok();
         }
+    }
+    
+    // Get the latest event to find the Discord channel for announcements
+    let latest_event = lib::db::get_last_event_in_series(&state.pool, event_series_id).await?;
+    
+    if let Some(latest_event) = latest_event {
         // Announce the new session in the Discord channel
         let channel_roles =
             lib::get_event_series_roles(event_series_id, &mut state.pool.begin().await?).await?;
@@ -361,18 +330,18 @@ async fn schedule_session_post_handler(
                 "Your adventure continues here, heroes of {channel_role_mention}: {link}. Slay the \
                  dragon, save the prince, get the treasure, or whatever shenanigans you like to \
                  get into.",
-                link = &new_event.short_url,
+                link = &new_event_url,
                 channel_role_mention = channel_roles.user.mention()
             )
         } else {
             format!(
                 "Your adventure continues @here: {link}. Slay the dragon, save the prince, get \
                  the treasure, or whatever shenanigans you like to get into.",
-                link = &new_event.short_url
+                link = &new_event_url
             )
         };
         if let Err(err) = lib::discord::util::say_in_event_channel(
-            event.id,
+            latest_event.id,
             &message,
             &state.pool,
             &state.discord_cache_http,
@@ -385,6 +354,7 @@ async fn schedule_session_post_handler(
                 err
             );
         }
+        
         // If RSVPs were not transferred, announce the new session in the bot alerts channel
         if is_open_game {
             let message = format!(
@@ -392,7 +362,7 @@ async fn schedule_session_post_handler(
                  this session for new players to join. Don't forget to **open RSVPs** when you do \
                  that.",
                 organiser_mention = lib::discord::sync::ids::ORGANISER_ID.mention(),
-                link = &new_event.event_url,
+                link = &new_event_url,
             );
             if let Err(err) =
                 lib::discord::util::say_in_bot_alerts_channel(&message, &state.discord_cache_http)
@@ -405,18 +375,13 @@ async fn schedule_session_post_handler(
                 );
             }
         }
-        let template = ScheduleSessionSuccessTemplate {
-            title: new_event.title.unwrap_or_str("No title"),
-            link: &new_event.event_url,
-            transferred_all_rsvps: transferred_all_rsvps,
-            closed_rsvps: rsvps_are_closed,
-        };
-        return Ok(template.into_response());
     }
-    let template: MessageTemplate = (
-        "No prior event found",
-        "Cannot schedule a continuation session without an initial event",
-    )
-        .into();
+    
+    let template = ScheduleSessionSuccessTemplate {
+        title: &new_event_title,
+        link: &new_event_url,
+        transferred_all_rsvps: None, // Not implementing RSVP transfer for now
+        closed_rsvps: rsvps_are_closed,
+    };
     Ok(template.into_response())
 }
