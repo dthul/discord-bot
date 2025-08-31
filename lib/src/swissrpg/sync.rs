@@ -109,11 +109,12 @@ pub async fn sync_event(
             match legacy_event_series_id {
                 Some(indicated_event_series_id) => indicated_event_series_id,
                 None => {
-                    // TODO
+                    // Create new event series with SwissRPG event series ID
                     let new_series_type = "adventure";
                     sqlx::query_scalar!(
-                        r#"INSERT INTO event_series ("type") VALUES ($1) RETURNING id"#,
-                        new_series_type
+                        r#"INSERT INTO event_series ("type", swissrpg_event_series_id) VALUES ($1, $2) RETURNING id"#,
+                        new_series_type,
+                        event_series.uuid
                     )
                     .fetch_one(&mut *tx)
                     .await?
@@ -121,6 +122,31 @@ pub async fn sync_event(
             }
         }
     };
+
+    // Ensure the event series has the SwissRPG event series ID set
+    // This handles the case where an existing series doesn't have the SwissRPG ID yet
+    let series_swissrpg_id = sqlx::query_scalar!(
+        r#"SELECT swissrpg_event_series_id FROM event_series WHERE id = $1"#,
+        series_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if series_swissrpg_id.is_none() {
+        // Update the existing event series to include the SwissRPG event series ID
+        sqlx::query!(
+            r#"UPDATE event_series SET swissrpg_event_series_id = $1 WHERE id = $2"#,
+            event_series.uuid,
+            series_id
+        )
+        .execute(&mut *tx)
+        .await?;
+        
+        println!(
+            "Event syncing task: Set SwissRPG event series ID {} for existing event series {}",
+            event_series.uuid, series_id
+        );
+    }
 
     // Create or update the event and corresponding SwissRPG event in the database
     let db_event_id = if let Some(db_event_id) = db_event_id {
