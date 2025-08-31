@@ -247,13 +247,35 @@ fn main() {
         );
 
     let static_file_prefix = Box::leak(format!("{}/static/", lib::urls::BASE_URL).into_boxed_str());
-    let syncing_task = lib::tasks::sync::create_recurring_syncing_task(
+    
+    // Create shared sync state for coordinating between sync tasks
+    let sync_state = lib::tasks::sync::SyncState::default();
+    
+    // Independent sync tasks
+    let meetup_sync_task = lib::tasks::sync::create_recurring_meetup_sync_task(
+        pool.clone(),
+        async_meetup_client.clone(),
+        sync_state.clone(),
+    );
+    
+    let swissrpg_sync_task = lib::tasks::sync::create_recurring_swissrpg_sync_task(
+        pool.clone(),
+        swissrpg_client.clone(),
+        sync_state.clone(),
+    );
+    
+    let discord_sync_task = lib::tasks::sync::create_recurring_discord_sync_task(
         pool.clone(),
         redis_client.clone(),
-        swissrpg_client.clone(),
-        async_meetup_client.clone(),
         discord_api.clone(),
         bot_id,
+    );
+    
+    let free_spots_task = lib::tasks::sync::create_recurring_free_spots_task(
+        sync_state,
+        async_meetup_client.clone(),
+        pool.clone(),
+        discord_api.clone(),
         static_file_prefix,
     );
 
@@ -271,7 +293,13 @@ fn main() {
     let (end_of_game_task, abort_handle_end_of_game_task) = future::abortable(end_of_game_task);
     let (user_topic_voice_channel_reset_task, abort_handle_user_topic_voice_channel_reset_task) =
         future::abortable(user_topic_voice_channel_reset_task);
-    let (syncing_task, abort_handle_syncing_task) = future::abortable(syncing_task);
+    
+    // Split sync tasks
+    let (meetup_sync_task, abort_handle_meetup_sync_task) = future::abortable(meetup_sync_task);
+    let (swissrpg_sync_task, abort_handle_swissrpg_sync_task) = future::abortable(swissrpg_sync_task);
+    let (discord_sync_task, abort_handle_discord_sync_task) = future::abortable(discord_sync_task);
+    let (free_spots_task, abort_handle_free_spots_task) = future::abortable(free_spots_task);
+    
     let (stripe_subscription_refresh_task, abort_handle_stripe_subscription_refresh_task) =
         future::abortable(stripe_subscription_refresh_task);
 
@@ -323,10 +351,25 @@ fn main() {
             let _ = user_topic_voice_channel_reset_task.await;
             println!("User topic voice channel reset task shut down.");
         });
+        
+        // Split sync tasks
         tokio::spawn(async {
-            let _ = syncing_task.await;
-            println!("Syncing task shut down.");
+            let _ = meetup_sync_task.await;
+            println!("Meetup sync task shut down.");
         });
+        tokio::spawn(async {
+            let _ = swissrpg_sync_task.await;
+            println!("SwissRPG sync task shut down.");
+        });
+        tokio::spawn(async {
+            let _ = discord_sync_task.await;
+            println!("Discord sync task shut down.");
+        });
+        tokio::spawn(async {
+            let _ = free_spots_task.await;
+            println!("Free spots task shut down.");
+        });
+        
         tokio::spawn(async {
             let _ = stripe_subscription_refresh_task.await;
             println!("Stripe subscription refresh task shut down.");
@@ -355,7 +398,13 @@ fn main() {
     // abort_handle_users_token_refresh_task.abort();
     abort_handle_end_of_game_task.abort();
     abort_handle_user_topic_voice_channel_reset_task.abort();
-    abort_handle_syncing_task.abort();
+    
+    // Abort split sync tasks
+    abort_handle_meetup_sync_task.abort();
+    abort_handle_swissrpg_sync_task.abort();
+    abort_handle_discord_sync_task.abort();
+    abort_handle_free_spots_task.abort();
+    
     abort_handle_stripe_subscription_refresh_task.abort();
     abort_web_server_tx.send(()).ok();
     println!("About to shut down the tokio runtime.");
