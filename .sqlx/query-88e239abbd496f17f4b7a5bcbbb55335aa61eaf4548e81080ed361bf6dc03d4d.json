@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as \"meetup_event_id?\", meetup_event.meetup_id as \"meetup_event_meetup_id?\", meetup_event.url as \"meetup_event_url?\", meetup_event.urlname as \"meetup_event_urlname?\"\n        FROM event\n        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id\n        WHERE event_series_id = $1 AND event.start_time > NOW() AND event.deleted IS NULL\n        ORDER BY start_time",
+  "query": "SELECT event.id as event_id, event.start_time, event.title, event.description, event.is_online, event.discord_category_id, meetup_event.id as \"meetup_event_id?\", meetup_event.meetup_id as \"meetup_event_meetup_id?\", meetup_event.url as \"meetup_event_url?\", meetup_event.urlname as \"meetup_event_urlname?\", swissrpg_event.id as \"swissrpg_event_id?\", swissrpg_event.swissrpg_id as \"swissrpg_event_swissrpg_id?\", swissrpg_event.url as \"swissrpg_event_url?\"\n        FROM event\n        LEFT OUTER JOIN meetup_event ON event.id = meetup_event.event_id\n        LEFT OUTER JOIN swissrpg_event ON event.id = swissrpg_event.event_id\n        WHERE event_series_id = $1 AND event.start_time > NOW() AND event.deleted IS NULL\n        ORDER BY start_time",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,21 @@
         "ordinal": 9,
         "name": "meetup_event_urlname?",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "swissrpg_event_id?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "swissrpg_event_swissrpg_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "swissrpg_event_url?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -69,8 +84,11 @@
       false,
       false,
       false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "33b5f5dbd9f5fd5017766e71a9445b9da3085df17b321f36f67674cdc38c1578"
+  "hash": "88e239abbd496f17f4b7a5bcbbb55335aa61eaf4548e81080ed361bf6dc03d4d"
 }
