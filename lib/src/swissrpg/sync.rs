@@ -47,6 +47,104 @@ pub async fn sync_task(
     Ok(event_collector)
 }
 
+/// Sync SwissRPG event series, establishing the proper series relationship
+#[tracing::instrument(skip(event_series), fields(event_series_uuid = %event_series.uuid, event_series_title = %event_series.title))]
+async fn sync_event_series(
+    event_series: &Event,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<i32, crate::BoxedError> {
+    // Check if this SwissRPG event series already exists in our database
+    let existing_series_id = sqlx::query_scalar!(
+        r#"SELECT id FROM event_series WHERE swissrpg_event_series_id = $1"#,
+        event_series.uuid
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    if let Some(series_id) = existing_series_id {
+        // Event series already exists with this SwissRPG ID
+        return Ok(series_id);
+    }
+
+    // Check if there is a legacy (Meetup) event series to associate with
+    let legacy_event_series_id = if let Some(legacy_series_event_id) = event_series.legacy_id {
+        let event_series_id = sqlx::query_scalar!(
+            r#"SELECT event.event_series_id
+            FROM event
+            INNER JOIN meetup_event ON event.id = meetup_event.event_id
+            WHERE meetup_event.meetup_id = $1"#,
+            legacy_series_event_id.to_string()
+        )
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        if event_series_id.is_none() {
+            eprintln!("Event syncing task: SwissRPG event series {} indicates that it is part of the same event series as Meetup event {} but the latter is not in the database", event_series.uuid, legacy_series_event_id);
+        }
+        event_series_id
+    } else {
+        None
+    };
+
+    let series_id = match legacy_event_series_id {
+        Some(indicated_event_series_id) => {
+            // Check for conflicts: ensure the existing series doesn't already have a SwissRPG ID
+            let existing_swissrpg_id = sqlx::query_scalar!(
+                r#"SELECT swissrpg_event_series_id FROM event_series WHERE id = $1"#,
+                indicated_event_series_id
+            )
+            .fetch_one(&mut **tx)
+            .await?;
+
+            if existing_swissrpg_id.is_some() && existing_swissrpg_id.as_ref() != Some(&event_series.uuid) {
+                return Err(simple_error::SimpleError::new(format!(
+                    "Event series {} already has SwissRPG ID {:?}, cannot associate with {}",
+                    indicated_event_series_id, existing_swissrpg_id, event_series.uuid
+                )).into());
+            }
+
+            if existing_swissrpg_id.is_none() {
+                // Update the existing event series to include the SwissRPG event series ID
+                sqlx::query!(
+                    r#"UPDATE event_series SET swissrpg_event_series_id = $1 WHERE id = $2"#,
+                    event_series.uuid,
+                    indicated_event_series_id
+                )
+                .execute(&mut **tx)
+                .await?;
+                
+                println!(
+                    "Event syncing task: Associated SwissRPG event series ID {} with existing event series {}",
+                    event_series.uuid, indicated_event_series_id
+                );
+            }
+
+            indicated_event_series_id
+        }
+        None => {
+            // Create new event series with SwissRPG event series ID
+            let new_series_type = "adventure";
+            let series_id = sqlx::query_scalar!(
+                r#"INSERT INTO event_series ("type", swissrpg_event_series_id) VALUES ($1, $2) RETURNING id"#,
+                new_series_type,
+                event_series.uuid
+            )
+            .fetch_one(&mut **tx)
+            .await?;
+
+            println!(
+                "Event syncing task: Created new event series {} for SwissRPG event series {}",
+                series_id, event_series.uuid
+            );
+
+            series_id
+        }
+    };
+
+    Ok(series_id)
+}
+
+/// Sync individual SwissRPG event/session
 #[tracing::instrument(skip(event_series, event, db_connection), fields(event_series_uuid = %event_series.uuid, session_uuid = %event.uuid, event_series_title = %event_series.title))]
 pub async fn sync_event(
     event_series: &Event,
@@ -55,9 +153,12 @@ pub async fn sync_event(
 ) -> Result<(), crate::BoxedError> {
     let mut tx = db_connection.begin().await?;
 
-    // Check if this event already exists in the database
-    let row = sqlx::query!(
-        r#"SELECT swissrpg_event.id as "swissrpg_event_id", event.id as "event_id", event.event_series_id
+    // Step 1: Sync the event series first
+    let series_id = sync_event_series(event_series, &mut tx).await?;
+
+    // Step 2: Check if this individual event already exists
+    let existing_event = sqlx::query!(
+        r#"SELECT swissrpg_event.id as "swissrpg_event_id", event.id as "event_id"
         FROM swissrpg_event
         INNER JOIN event ON swissrpg_event.event_id = event.id
         WHERE swissrpg_event.swissrpg_id = $1
@@ -67,91 +168,15 @@ pub async fn sync_event(
     .fetch_optional(&mut *tx)
     .await?;
 
-    let db_swissrpg_event_id = row.as_ref().map(|row| row.swissrpg_event_id);
-    let db_event_id = row.as_ref().map(|row| row.event_id);
-    let existing_series_id = row.as_ref().map(|row| row.event_series_id);
-
-    // Check if there is an event series tied to the legacy (Meetup) event ID
-    let legacy_event_series_id = if let Some(legacy_series_event_id) = event_series.legacy_id {
-        let event_series_id = sqlx::query_scalar!(
-            r#"SELECT event.event_series_id
-            FROM event
-            INNER JOIN meetup_event ON event.id = meetup_event.event_id
-            WHERE meetup_event.meetup_id = $1"#,
-            legacy_series_event_id.to_string()
-        )
-        .fetch_optional(&mut *tx)
-        .await?;
-
-        if event_series_id.is_none() {
-            eprintln!("Event syncing task: SwissRPG event {} indicates that it is part of the same event series as Meetup event {} but the latter is not in the database", event.uuid, legacy_series_event_id);
-            return Ok(());
-        }
-        event_series_id
+    let (db_swissrpg_event_id, db_event_id) = if let Some(row) = existing_event {
+        (Some(row.swissrpg_event_id), Some(row.event_id))
     } else {
-        None
+        (None, None)
     };
 
-    // Series ID logic (similar to meetup sync)
-    let series_id = match existing_series_id {
-        Some(existing_series_id) => {
-            if let Some(indicated_event_series_id) = legacy_event_series_id {
-                if &existing_series_id != &indicated_event_series_id {
-                    eprintln!(
-                        "Warning: Event \"{}\" indicates legacy event series {} but is \
-                         already associated with event series {}.",
-                        event_series.title, indicated_event_series_id, existing_series_id
-                    );
-                    return Ok(());
-                }
-            }
-            existing_series_id
-        }
-        None => {
-            match legacy_event_series_id {
-                Some(indicated_event_series_id) => indicated_event_series_id,
-                None => {
-                    // Create new event series with SwissRPG event series ID
-                    let new_series_type = "adventure";
-                    sqlx::query_scalar!(
-                        r#"INSERT INTO event_series ("type", swissrpg_event_series_id) VALUES ($1, $2) RETURNING id"#,
-                        new_series_type,
-                        event_series.uuid
-                    )
-                    .fetch_one(&mut *tx)
-                    .await?
-                }
-            }
-        }
-    };
-
-    // Ensure the event series has the SwissRPG event series ID set
-    // This handles the case where an existing series doesn't have the SwissRPG ID yet
-    let series_swissrpg_id = sqlx::query_scalar!(
-        r#"SELECT swissrpg_event_series_id FROM event_series WHERE id = $1"#,
-        series_id
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-
-    if series_swissrpg_id.is_none() {
-        // Update the existing event series to include the SwissRPG event series ID
-        sqlx::query!(
-            r#"UPDATE event_series SET swissrpg_event_series_id = $1 WHERE id = $2"#,
-            event_series.uuid,
-            series_id
-        )
-        .execute(&mut *tx)
-        .await?;
-        
-        println!(
-            "Event syncing task: Set SwissRPG event series ID {} for existing event series {}",
-            event_series.uuid, series_id
-        );
-    }
-
-    // Create or update the event and corresponding SwissRPG event in the database
+    // Step 3: Create or update the individual event
     let db_event_id = if let Some(db_event_id) = db_event_id {
+        // Update existing event
         sqlx::query_scalar!(
             r#"UPDATE event
             SET event_series_id = $1, start_time = $2, title = $3, description = $4, is_online = $5, discord_category_id = $6
@@ -166,6 +191,7 @@ pub async fn sync_event(
             db_event_id
         ).fetch_one(&mut *tx).await?
     } else {
+        // Create new event
         sqlx::query_scalar!(
             r#"INSERT INTO event (event_series_id, start_time, title, description, is_online, discord_category_id)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -179,20 +205,12 @@ pub async fn sync_event(
         ).fetch_one(&mut *tx).await?
     };
 
+    // Step 4: Create or update the SwissRPG event record
     let _db_swissrpg_event_id = if let Some(db_swissrpg_event_id) = db_swissrpg_event_id {
-        // TODO: why is this update query done? Shouldn't it just return db_swissrpg_event_id directly?
-        // sqlx::query_scalar!(
-        //     r#"UPDATE swissrpg_event
-        //     SET swissrpg_id = $2
-        //     WHERE id = $1
-        //     RETURNING id"#,
-        //     db_wawa_event_id,
-        //     event.uuid
-        // )
-        // .fetch_one(&mut *tx)
-        // .await?
+        // Event already exists, no need to update the swissrpg_event record
         db_swissrpg_event_id
     } else {
+        // Create new swissrpg_event record
         sqlx::query_scalar!(
             r#"INSERT INTO swissrpg_event (event_id, swissrpg_id, url) VALUES ($1, $2, $3)
             RETURNING id"#,
@@ -204,8 +222,7 @@ pub async fn sync_event(
         .await?
     };
 
-    // Mark event hosts (organisers)
-    // TODO: move this up a level to only run once per event series
+    // Step 5: Sync event hosts (organisers)
     for organiser in &event_series.organisers {
         let Ok(organiser_discord_id) = organiser.discord_id.parse::<NonZeroU64>().map(Into::into)
         else {
@@ -224,7 +241,7 @@ pub async fn sync_event(
         ).execute(&mut *tx).await?;
     }
 
-    // Mark event participants
+    // Step 6: Sync event participants
     let mut attendee_member_ids = Vec::with_capacity(event.attendees.len());
     for participant in &event.attendees {
         let Ok(participant_discord_id) =
@@ -241,7 +258,7 @@ pub async fn sync_event(
         attendee_member_ids.push(member_id);
     }
 
-    // Remove all users which are not attending
+    // Remove participants who are no longer attending
     sqlx::query!(
         r#"DELETE FROM event_participant WHERE event_id = $1 AND NOT (member_id = ANY($2))"#,
         db_event_id,
@@ -253,8 +270,8 @@ pub async fn sync_event(
     .execute(&mut *tx)
     .await?;
 
+    // Add current participants
     for member_id in attendee_member_ids {
-        // Mark this member as attending
         sqlx::query!(
             r#"INSERT INTO event_participant (event_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
             db_event_id,

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT swissrpg_event.id as \"swissrpg_event_id\", event.id as \"event_id\"\n        FROM swissrpg_event\n        INNER JOIN event ON swissrpg_event.event_id = event.id\n        WHERE swissrpg_event.swissrpg_id = $1\n        FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "swissrpg_event_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "event_id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1fb69dbaf240d5471deb206e8e9e1dbc33d02211722aad726855a3c6843f36e3"
+}

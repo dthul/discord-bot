@@ -5,7 +5,7 @@ CREATE TABLE swissrpg_event (
     id integer PRIMARY KEY DEFAULT nextval('swissrpg_event_id_seq'),
     event_id integer NOT NULL REFERENCES event (id),
     swissrpg_id uuid UNIQUE NOT NULL,
-    url text NOT NULL
+    url text UNIQUE NOT NULL
 );
 ALTER SEQUENCE swissrpg_event_id_seq OWNED BY swissrpg_event.id;
 
