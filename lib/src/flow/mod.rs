@@ -2,7 +2,9 @@ use futures_util::FutureExt;
 use rand::Rng;
 use redis::AsyncCommands;
 
-use crate::{db, meetup::newapi::create_event_mutation::CreateEventInput, swissrpg::client::SwissRPGClient};
+use crate::{
+    db, meetup::newapi::create_event_mutation::CreateEventInput, swissrpg::client::SwissRPGClient,
+};
 use eyre::Context;
 use std::sync::Arc;
 
@@ -55,7 +57,7 @@ impl ScheduleSessionFlow {
     pub async fn schedule<'a>(
         self,
         db_connection: sqlx::PgPool,
-        mut redis_connection: redis::aio::MultiplexedConnection,
+        redis_connection: redis::aio::MultiplexedConnection,
         meetup_client: Option<&'a crate::meetup::newapi::AsyncClient>,
         swissrpg_client: Option<Arc<SwissRPGClient>>,
         date_time: chrono::DateTime<chrono::Utc>,
@@ -70,41 +72,76 @@ impl ScheduleSessionFlow {
             )
             .into());
         };
-        
-        // Determine which API to use based on the latest event's source
+
+        let swissrpg_client = swissrpg_client
+            .ok_or_else(|| simple_error::SimpleError::new("SwissRPG client not available"))?;
+
+        // Always schedule new sessions on SwissRPG
+        // If the previous session was on Meetup and there's no SwissRPG event series ID,
+        // migrate the event to SwissRPG first
         match latest_event.source() {
             Some(db::EventSource::Meetup) => {
-                let meetup_client = meetup_client.ok_or_else(|| {
-                    simple_error::SimpleError::new("Meetup client not available")
+                // Check if the event series already has a SwissRPG event series ID
+                let swissrpg_event_series_id = sqlx::query_scalar!(
+                    r#"SELECT swissrpg_event_series_id FROM event_series 
+                       WHERE id = $1"#,
+                    self.event_series_id.0
+                )
+                .fetch_one(&db_connection)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to fetch SwissRPG event series ID for event series {}",
+                        self.event_series_id.0
+                    )
                 })?;
-                
-                // Find the latest Meetup event in the series
-                let latest_meetup_event = events.iter().find_map(|event| {
-                    if let Some(meetup_event) = &event.meetup_event {
-                        Some(meetup_event)
-                    } else {
-                        None
-                    }
-                });
-                let latest_meetup_event = latest_meetup_event.ok_or_else(|| {
-                    simple_error::SimpleError::new("Could not find a Meetup event to clone")
-                })?;
-                
-                self.schedule_meetup_event(
-                    db_connection,
-                    redis_connection,
-                    meetup_client,
-                    latest_event,
-                    latest_meetup_event,
-                    date_time,
-                    is_open_event,
-                ).await.map(ScheduleSessionResult::Meetup)
-            },
+
+                if swissrpg_event_series_id.is_none() {
+                    // Need to migrate the Meetup event to SwissRPG first
+                    let meetup_client = meetup_client.ok_or_else(|| {
+                        simple_error::SimpleError::new("Meetup client not available for migration")
+                    })?;
+
+                    // Find the latest Meetup event in the series
+                    let latest_meetup_event = events.iter().find_map(|event| {
+                        if let Some(meetup_event) = &event.meetup_event {
+                            Some(meetup_event)
+                        } else {
+                            None
+                        }
+                    });
+                    let latest_meetup_event = latest_meetup_event.ok_or_else(|| {
+                        simple_error::SimpleError::new("Could not find a Meetup event to migrate")
+                    })?;
+
+                    self.migrate_meetup_to_swissrpg_and_schedule(
+                        db_connection,
+                        redis_connection,
+                        meetup_client,
+                        swissrpg_client,
+                        latest_event,
+                        latest_meetup_event,
+                        date_time,
+                        is_open_event,
+                    )
+                    .await
+                    .map(ScheduleSessionResult::SwissRPG)
+                } else {
+                    // Event series already has SwissRPG ID, schedule directly on SwissRPG
+                    self.schedule_swissrpg_event(
+                        db_connection,
+                        redis_connection,
+                        swissrpg_client,
+                        latest_event,
+                        date_time,
+                        is_open_event,
+                    )
+                    .await
+                    .map(ScheduleSessionResult::SwissRPG)
+                }
+            }
             Some(db::EventSource::SwissRPG) => {
-                let swissrpg_client = swissrpg_client.ok_or_else(|| {
-                    simple_error::SimpleError::new("SwissRPG client not available")
-                })?;
-                
+                // Already on SwissRPG, schedule directly
                 self.schedule_swissrpg_event(
                     db_connection,
                     redis_connection,
@@ -112,16 +149,17 @@ impl ScheduleSessionFlow {
                     latest_event,
                     date_time,
                     is_open_event,
-                ).await.map(ScheduleSessionResult::SwissRPG)
-            },
-            None => {
-                Err(simple_error::SimpleError::new(
-                    "Could not determine the source of the latest event (neither Meetup nor SwissRPG)"
-                ).into())
+                )
+                .await
+                .map(ScheduleSessionResult::SwissRPG)
             }
+            None => Err(simple_error::SimpleError::new(
+                "Could not determine the source of the latest event (neither Meetup nor SwissRPG)",
+            )
+            .into()),
         }
     }
-    
+
     async fn schedule_meetup_event<'a>(
         self,
         db_connection: sqlx::PgPool,
@@ -151,7 +189,7 @@ impl ScheduleSessionFlow {
             Some(new_event_hook),
         )
         .await?;
-        
+
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
         let sync_future = {
@@ -168,7 +206,7 @@ impl ScheduleSessionFlow {
         }));
         Ok(new_event)
     }
-    
+
     #[tracing::instrument(skip(self, db_connection, redis_connection, swissrpg_client, latest_event), fields(flow_id = %self.id, event_series_id = %self.event_series_id.0, latest_event_id = %latest_event.id.0))]
     async fn schedule_swissrpg_event(
         self,
@@ -183,7 +221,7 @@ impl ScheduleSessionFlow {
         let _swissrpg_event = latest_event.swissrpg_event.as_ref().ok_or_else(|| {
             simple_error::SimpleError::new("Latest event is not a SwissRPG event")
         })?;
-        
+
         // Get the SwissRPG event series ID from the event_series table
         let swissrpg_event_series_id = sqlx::query_scalar!(
             r#"SELECT swissrpg_event_series_id FROM event_series 
@@ -192,8 +230,13 @@ impl ScheduleSessionFlow {
         )
         .fetch_one(&db_connection)
         .await
-        .with_context(|| format!("Failed to fetch SwissRPG event series ID for event series {}", self.event_series_id.0))?;
-        
+        .with_context(|| {
+            format!(
+                "Failed to fetch SwissRPG event series ID for event series {}",
+                self.event_series_id.0
+            )
+        })?;
+
         let swissrpg_event_series_id = swissrpg_event_series_id.ok_or_else(|| {
             tracing::error!(
                 event_series_id = %self.event_series_id.0,
@@ -201,35 +244,137 @@ impl ScheduleSessionFlow {
             );
             eyre::eyre!("Event series {} does not have a SwissRPG event series ID", self.event_series_id.0)
         })?;
-        
+
         // Create a new session via SwissRPG API using the event series ID
         let schedule_request = crate::swissrpg::schema::ScheduleSessionRequest {
             start: date_time.format("%Y-%m-%d %H:%M").to_string(),
             duration: 240, // 4 hours default duration
             include_players: true,
         };
-        
-        let updated_event = swissrpg_client.schedule_session(&swissrpg_event_series_id, schedule_request)
+
+        let updated_event = swissrpg_client
+            .schedule_session(&swissrpg_event_series_id, schedule_request)
             .await
-            .with_context(|| format!("Failed to schedule SwissRPG session for event series {}", swissrpg_event_series_id))?;
-        
+            .with_context(|| {
+                format!(
+                    "Failed to schedule SwissRPG session for event series {}",
+                    swissrpg_event_series_id
+                )
+            })?;
+
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
-        
+
         // No need to sync - the SwissRPG sync task will pick this up
         Ok(updated_event)
     }
-    
+
+    async fn migrate_meetup_to_swissrpg_and_schedule<'a>(
+        self,
+        db_connection: sqlx::PgPool,
+        mut redis_connection: redis::aio::MultiplexedConnection,
+        _meetup_client: &'a crate::meetup::newapi::AsyncClient,
+        swissrpg_client: Arc<SwissRPGClient>,
+        latest_event: &db::Event,
+        latest_meetup_event: &db::MeetupEvent,
+        date_time: chrono::DateTime<chrono::Utc>,
+        _is_open_event: bool,
+    ) -> Result<crate::swissrpg::schema::Event, crate::BoxedError> {
+        tracing::info!(
+            event_series_id = %self.event_series_id.0,
+            meetup_event_id = %latest_meetup_event.meetup_id,
+            "Migrating Meetup event series to SwissRPG before scheduling next session"
+        );
+
+        // Get attendees and hosts from the database for the latest event
+        let event_hosts = sqlx::query!(
+            r#"SELECT member.discord_id
+               FROM member
+               INNER JOIN event_host ON member.id = event_host.member_id
+               WHERE event_host.event_id = $1 AND member.discord_id IS NOT NULL"#,
+            latest_event.id.0
+        )
+        .fetch_all(&db_connection)
+        .await?;
+
+        let event_attendees = sqlx::query!(
+            r#"SELECT member.discord_id
+               FROM member
+               INNER JOIN event_participant ON member.id = event_participant.member_id
+               WHERE event_participant.event_id = $1 AND member.discord_id IS NOT NULL"#,
+            latest_event.id.0
+        )
+        .fetch_all(&db_connection)
+        .await?;
+
+        // Prepare migration request
+        let migrate_request = crate::swissrpg::schema::MigrateEventRequest {
+            title: latest_event.title.clone(),
+            start: latest_event.time.format("%Y-%m-%d %H:%M").to_string(),
+            organisers: event_hosts
+                .iter()
+                .filter_map(|host| host.discord_id.map(|id| (id as u64).to_string()))
+                .collect(),
+            attendees: event_attendees
+                .iter()
+                .filter_map(|attendee| attendee.discord_id.map(|id| (id as u64).to_string()))
+                .collect(),
+            legacy_id: latest_meetup_event.meetup_id.parse().unwrap_or(0),
+            description: Some(latest_event.description.clone()),
+            end: None,
+        };
+
+        // Migrate to SwissRPG
+        let migrated_event = swissrpg_client
+            .migrate_event(migrate_request)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to migrate Meetup event {} to SwissRPG",
+                    latest_meetup_event.meetup_id
+                )
+            })?;
+
+        tracing::info!(
+            event_series_id = %self.event_series_id.0,
+            swissrpg_event_series_id = %migrated_event.uuid,
+            "Successfully migrated Meetup event series to SwissRPG"
+        );
+
+        // Now schedule the next session on the migrated SwissRPG event series
+        let schedule_request = crate::swissrpg::schema::ScheduleSessionRequest {
+            start: date_time.format("%Y-%m-%d %H:%M").to_string(),
+            duration: 240, // 4 hours default duration
+            include_players: true,
+        };
+
+        let updated_event = swissrpg_client
+            .schedule_session(&migrated_event.uuid, schedule_request)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to schedule SwissRPG session for migrated event series {}",
+                    migrated_event.uuid
+                )
+            })?;
+
+        let redis_key = format!("flow:schedule_session:{}", self.id);
+        let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
+
+        // The SwissRPG sync task will pick up both the migrated event and the new session
+        Ok(updated_event)
+    }
+
     fn increment_session_title(title: &str) -> String {
         // This logic is similar to the one used in new_event_hook for Meetup events
         let title_captures = crate::meetup::sync::SESSION_REGEX.captures_iter(title);
-        
+
         // Match the rightmost occurrence of " Session X" in the event name.
         let (title_only, session_number) = if let Some(capture) = title_captures.last() {
             // If there is a match, increase the number
             let session_number = capture.name("number").unwrap().as_str();
             let session_number = session_number.parse::<i32>().unwrap_or(1);
-            
+
             // Find the range of the " Session X" match and remove it from the string
             let session_x_match = capture.get(0).unwrap();
             let mut title_only = title.to_string();
@@ -239,7 +384,7 @@ impl ScheduleSessionFlow {
             // If there is no match, return the whole name and Session number 1
             (title.to_string(), 1)
         };
-        
+
         format!("{} Session {}", title_only, session_number + 1)
     }
 

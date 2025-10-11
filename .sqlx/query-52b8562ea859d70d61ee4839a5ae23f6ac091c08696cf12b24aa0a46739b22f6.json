@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT member.discord_id\n               FROM member\n               INNER JOIN event_host ON member.id = event_host.member_id\n               WHERE event_host.event_id = $1 AND member.discord_id IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discord_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "52b8562ea859d70d61ee4839a5ae23f6ac091c08696cf12b24aa0a46739b22f6"
+}

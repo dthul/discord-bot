@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT swissrpg_event_series_id FROM event_series \n                       WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "swissrpg_event_series_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "15ebebae57b62345cf86cdf8755c15122a27d22de62cd438100fec87a56592d6"
+}
