@@ -4,21 +4,18 @@ use graphql_client::{GraphQLQuery, Response};
 use reqwest::header::{HeaderMap, AUTHORIZATION};
 use serde::{de::Error as _, Deserialize, Serialize, Serializer};
 
-const API_ENDPOINT: &'static str = "https://api.meetup.com/gql";
+const API_ENDPOINT: &'static str = "https://api.meetup.com/gql-ext";
 pub const URLNAMES: [&'static str; 3] =
     ["SwissRPG-Zurich", "SwissRPG-Central", "SwissRPG-Romandie"];
 
 #[derive(Debug, Clone)]
-pub struct DateTime(pub chrono::DateTime<chrono::Utc>); // serialized w/o time zone
+pub struct Date(pub chrono::NaiveDate);
 
 #[derive(Debug, Clone)]
-pub struct ZonedDateTime(pub chrono::DateTime<chrono::Utc>);
+pub struct LocalDateTime(pub chrono::DateTime<chrono::Utc>); // serialized w/o time zone
 
 #[derive(Debug, Clone)]
-pub struct AlphaNumericId(pub String);
-
-#[derive(Debug, Clone, Copy)]
-pub struct NumericId(pub u64);
+pub struct DateTime(pub chrono::DateTime<chrono::Utc>);
 
 #[derive(Debug, Clone)]
 pub struct Duration(chrono::Duration);
@@ -81,9 +78,9 @@ pub struct CreateEventMutation;
 pub struct CloseEventRsvpsMutation;
 
 pub type UpcomingEventDetails =
-    upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNode;
+    upcoming_events_query::UpcomingEventsQueryGroupByUrlnameEventsEdgesNode;
 
-pub type Ticket = event_tickets_query::EventTicketsQueryEventTicketsEdgesNode;
+pub type Ticket = event_tickets_query::EventTicketsQueryEventRsvpsEdgesNode;
 
 pub type TicketStatus = String;
 
@@ -122,16 +119,13 @@ impl From<NewEventResponse> for UpcomingEventDetails {
             id: event.id,
             title: event.title,
             event_url: event.event_url,
-            short_url: event.short_url,
             description: event.description,
-            hosts: event.hosts.map(|hosts| hosts.into_iter().map(|host| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeHosts { id: host.id }).collect()),
+            event_hosts: event.event_hosts.map(|hosts| hosts.into_iter().map(|maybe_host| maybe_host.map(|host| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameEventsEdgesNodeEventHosts { member: host.member.map(|member| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameEventsEdgesNodeEventHostsMember {id: member.id })})).collect()),
             date_time: event.date_time,
             max_tickets: event.max_tickets,
-            going: event.going,
-            is_online: event.is_online,
-            rsvp_settings: event.rsvp_settings.map(|rsvp_settings| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeRsvpSettings { rsvps_closed: rsvp_settings.rsvps_closed }),
-            venue: event.venue.map(|venue| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeVenue { lat: venue.lat, lng: venue.lng, city: venue.city }),
-            group: event.group.map(|group| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameUpcomingEventsEdgesNodeGroup { urlname: group.urlname }),
+            rsvp_settings: upcoming_events_query::UpcomingEventsQueryGroupByUrlnameEventsEdgesNodeRsvpSettings { rsvps_closed: event.rsvp_settings.rsvps_closed },
+            venues: event.venues.map(|venues| venues.into_iter().map(|venue| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameEventsEdgesNodeVenues { lat: venue.lat, lon: venue.lon, city: venue.city, venue_type: venue.venue_type }).collect()),
+            group: event.group.map(|group| upcoming_events_query::UpcomingEventsQueryGroupByUrlnameEventsEdgesNodeGroup { urlname: group.urlname }),
         }
     }
 }
@@ -152,20 +146,20 @@ impl From<chrono::Duration> for Duration {
     }
 }
 
-impl From<ZonedDateTime> for DateTime {
-    fn from(time: ZonedDateTime) -> Self {
-        DateTime(time.0)
+impl From<DateTime> for LocalDateTime {
+    fn from(time: DateTime) -> Self {
+        LocalDateTime(time.0)
     }
 }
 
-impl std::ops::Deref for ZonedDateTime {
+impl std::ops::Deref for DateTime {
     type Target = chrono::DateTime<chrono::Utc>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'de> Deserialize<'de> for ZonedDateTime {
+impl<'de> Deserialize<'de> for DateTime {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -213,7 +207,7 @@ impl<'de> Deserialize<'de> for ZonedDateTime {
             })
         });
         if let Some(datetime) = datetime {
-            Ok(ZonedDateTime(datetime.with_timezone(&chrono::Utc)))
+            Ok(DateTime(datetime.with_timezone(&chrono::Utc)))
         } else {
             Err(D::Error::invalid_value(
                 serde::de::Unexpected::Str(&s),
@@ -223,7 +217,7 @@ impl<'de> Deserialize<'de> for ZonedDateTime {
     }
 }
 
-impl Serialize for ZonedDateTime {
+impl Serialize for DateTime {
     /// Serialize into a rfc3339 time string
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -233,7 +227,7 @@ impl Serialize for ZonedDateTime {
     }
 }
 
-impl Serialize for DateTime {
+impl Serialize for LocalDateTime {
     /// Serialize into a local (unzoned) date time
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -255,56 +249,25 @@ impl Serialize for Duration {
     }
 }
 
-impl<'de> Deserialize<'de> for AlphaNumericId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        // Sometimes Meetup returns IDs with a "!chp" suffix
-        // We strip it here
-        if s.ends_with("!chp") {
-            Ok(AlphaNumericId(s[..s.len() - 4].into()))
-        } else {
-            Ok(AlphaNumericId(s))
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for NumericId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        // Sometimes Meetup returns IDs with a "!chp" suffix
-        // We strip it here
-        let without_suffix = if s.ends_with("!chp") {
-            &s[..s.len() - 4]
-        } else {
-            &s
-        };
-        match without_suffix.parse::<u64>() {
-            Ok(id) => Ok(NumericId(id)),
-            Err(_err) => {
-                return Err(D::Error::invalid_value(
-                    serde::de::Unexpected::Str(&s),
-                    &"a numeric ID like '7594361' or '7594361!chp'",
-                ))
-            }
-        }
-    }
-}
-
 impl UpcomingEventDetails {
-    pub fn num_free_spots(&self) -> u32 {
-        (self.max_tickets - self.going).max(0) as u32
-    }
+    // pub fn num_free_spots(&self) -> u32 {
+    //     (self.max_tickets - self.going).max(0) as u32
+    // }
 
     pub fn host_ids(&self) -> Vec<u64> {
-        self.hosts
+        self.event_hosts
             .as_ref()
-            .map(|hosts| hosts.iter().map(|user| user.id.0).collect())
+            .map(|hosts| {
+                hosts
+                    .iter()
+                    .filter_map(|maybe_host| {
+                        maybe_host
+                            .as_ref()
+                            .and_then(|host| host.member.as_ref())
+                            .and_then(|member| member.id.parse::<u64>().ok())
+                    })
+                    .collect()
+            })
             .unwrap_or(vec![])
     }
 }
@@ -321,18 +284,6 @@ impl std::fmt::Display for Error {
             Error::ResourceNotFound => write!(f, "Resource not found"),
             Error::Payload(errors) => write!(f, "Payload errors:\n{:#?}", errors),
         }
-    }
-}
-
-impl std::fmt::Display for AlphaNumericId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::fmt::Display for NumericId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
@@ -460,21 +411,17 @@ impl AsyncClient {
                                 }) => return Some((Err(Error::ResourceNotFound), States::End)),
                                 Some(ResponseData {
                                     group_by_urlname:
-                                        Some(UpcomingEventsQueryGroupByUrlname { upcoming_events }),
+                                        Some(UpcomingEventsQueryGroupByUrlname { events }),
                                 }) => {
-                                    let next_page_cursor =
-                                        if upcoming_events.page_info.has_next_page {
-                                            // There are more result pages, continue querying
-                                            Some(upcoming_events.page_info.end_cursor)
+                                    let next_page_cursor = events.page_info.and_then(|page_info| {
+                                        if page_info.has_next_page {
+                                            page_info.end_cursor
                                         } else {
-                                            // There are no more results, we are done
                                             None
-                                        };
-                                    let events = upcoming_events
-                                        .edges
-                                        .into_iter()
-                                        .map(|edge| edge.node)
-                                        .collect();
+                                        }
+                                    });
+                                    let events =
+                                        events.edges.into_iter().map(|edge| edge.node).collect();
                                     States::YieldEvents {
                                         next_page_cursor,
                                         events,
@@ -568,20 +515,20 @@ impl AsyncClient {
                                     return Some((Err(Error::ResourceNotFound), States::End))
                                 }
                                 Some(ResponseData {
-                                    event: Some(EventTicketsQueryEvent { tickets, .. }),
+                                    event: Some(EventTicketsQueryEvent { rsvps, .. }),
                                 }) => {
-                                    let next_page_cursor = if tickets.page_info.has_next_page {
-                                        // There are more result pages, continue querying
-                                        Some(tickets.page_info.end_cursor)
-                                    } else {
-                                        // There are no more results, we are done
-                                        None
-                                    };
-                                    let tickets =
-                                        tickets.edges.into_iter().map(|edge| edge.node).collect();
+                                    let next_page_cursor = rsvps.page_info.and_then(|page_info| {
+                                        if page_info.has_next_page {
+                                            page_info.end_cursor
+                                        } else {
+                                            None
+                                        }
+                                    });
+                                    let rsvps =
+                                        rsvps.edges.into_iter().map(|edge| edge.node).collect();
                                     States::YieldTickets {
                                         next_page_cursor,
-                                        tickets,
+                                        tickets: rsvps,
                                     }
                                 }
                                 _ => {
@@ -684,5 +631,46 @@ impl AsyncClient {
             }) => Err(Error::ResourceNotFound),
             _ => Err(Error::GraphQL(response.errors.unwrap_or(vec![]))),
         }
+    }
+}
+
+pub trait IsOnline {
+    fn is_online(&self) -> bool;
+}
+
+impl IsOnline for event_query::EventQueryEvent {
+    fn is_online(&self) -> bool {
+        self.venues
+            .as_ref()
+            .map(|venues| {
+                venues
+                    .iter()
+                    .filter_map(|venue| {
+                        venue
+                            .venue_type
+                            .as_ref()
+                            .map(|venue_type| venue_type.to_lowercase() == "online")
+                    })
+                    .all(|x| x)
+            })
+            .unwrap_or(true)
+    }
+}
+impl IsOnline for upcoming_events_query::UpcomingEventsQueryGroupByUrlnameEventsEdgesNode {
+    fn is_online(&self) -> bool {
+        self.venues
+            .as_ref()
+            .map(|venues| {
+                venues
+                    .iter()
+                    .filter_map(|venue| {
+                        venue
+                            .venue_type
+                            .as_ref()
+                            .map(|venue_type| venue_type.to_lowercase() == "online")
+                    })
+                    .all(|x| x)
+            })
+            .unwrap_or(true)
     }
 }

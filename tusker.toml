@@ -8,5 +8,5 @@ filename = "migrations/*.up.sql"
 host = "localhost"
 port = 5432
 user = "tusker"
-password = ""
+password = "m86sUf3NG95x86Ea"
 dbname = "bottest"

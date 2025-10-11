@@ -1,5 +1,7 @@
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::meetup::newapi::IsOnline;
+
 pub async fn clone_event<'a>(
     urlname: &'a str,
     event_id: &'a str,
@@ -15,14 +17,12 @@ pub async fn clone_event<'a>(
     let event = meetup_client.get_event(event_id.into()).await?;
     let new_event = super::newapi::NewEvent {
         group_urlname: urlname.into(),
-        title: event.title.unwrap_or_else(|| "No title".into()),
-        description: event
-            .description
-            .unwrap_or_else(|| "Missing description".into()),
+        title: event.title,
+        description: event.description,
         start_date_time: event.date_time.into(),
         duration: None,
         rsvp_settings: Some(super::newapi::NewEventRsvpSettings {
-            rsvp_limit: Some(event.max_tickets),
+            rsvp_limit: event.max_tickets,
             guest_limit: Some(event.number_of_allowed_guests),
             rsvp_open_time: None,
             rsvp_close_time: None,
@@ -31,23 +31,18 @@ pub async fn clone_event<'a>(
         }),
         event_hosts: Some(
             event
-                .hosts
+                .event_hosts
                 .unwrap_or(vec![])
                 .iter()
-                .map(|host| host.id.0 as i64)
+                .filter_map(|maybe_host| maybe_host.and_then(|host| host.member))
+                .filter_map(|member| member.id.parse::<i64>().ok())
                 .collect(),
         ),
-        venue_id: if event.is_online {
-            Some("online".into())
-        } else {
-            event.venue.map(|venue| venue.id.0)
-        },
+        venue_ids: event
+            .venues
+            .map(|venues| venues.iter().map(|venue| venue.id.clone()).collect()),
         self_rsvp: Some(false),
-        how_to_find_us: if event.is_online {
-            None
-        } else {
-            event.how_to_find_us
-        },
+        how_to_find_us: event.how_to_find_us,
         question: None,
         featured_photo_id: Some(event.image.id.0 as i64),
         publish_status: Some(super::newapi::NewEventPublishStatus::DRAFT),

@@ -1,242 +1,3946 @@
-scalar AlphaNumericId
-scalar DateTime
-scalar Duration
-scalar NumericId
-scalar ZonedDateTime
+"""This directive allows results to be deferred during execution"""
+directive @defer(
+  """Deferred behaviour is controlled by this argument"""
+  if: Boolean! = true
+) on FRAGMENT_SPREAD | INLINE_FRAGMENT
 
-type CloseEventRsvpsPayload {
-    event: Event
-    errors: [PayloadError!]
+"""
+This directive disables error propagation when a non nullable field returns null for the given operation.
+"""
+directive @experimental_disableErrorPropagation on QUERY | MUTATION | SUBSCRIPTION
+
+"""Indicates an Input Object is a OneOf Input Object."""
+directive @oneOf on INPUT_OBJECT
+
+"""
+Intended to annotate mutations that have CDN page-cache implications
+
+This directive will introspect mutation calls and invalidate Entities as stale when updated.
+In turn, this may mark various web pages and api caches as stale for items that depend specifically on those entity ids.
+"""
+directive @purgePageCache(
+  """ When marking a mutation, declare what Entity is being invalidated when executed
+  """
+  entityType: CacheEntityType!
+
+  """
+  Path to where the EntityId can be found
+  INPUT example:
+   mutation myMut(input: {id: "myId"}) {...}
+   pathToId = "input.id"
+  OUTPUT example:
+   mutation myMut(input: {byCommonName: "common-name-1"}) { id commonName }
+   pathToId = "id"
+  OUTPUT example 2:
+   mutation myMut(input: {byCommonName: "common-name-1"}) { success { id commonName } errors { errMsg } }
+   pathToId = "success.id"
+  """
+  pathToId: String!
+
+  """ Where is the EntityId to be found? in the INPUT args or in the OUTPUT object?
+  """
+  pointcut: Pointcut!
+) on FIELD_DEFINITION
+
+"""Exposes a URL that specifies the behaviour of this scalar."""
+directive @specifiedBy on SCALAR
+
+directive @tracking on OBJECT | FIELD_DEFINITION
+
+"""This directive allows results to be deferred during execution"""
+directive @defer(
+  """Deferred behaviour is controlled by this argument"""
+  if: Boolean! = true
+
+  """A unique label that represents the fragment being deferred"""
+  label: String
+) on FRAGMENT_SPREAD | INLINE_FRAGMENT
+
+input AddGroupToNetworkInput {
+  groupId: ID!
+  networkId: ID!
 }
 
-type CreateEventPayload {
-    event: Event
-    errors: [PayloadError!]
+type AddGroupToNetworkPayload {
+  errors: [PayloadError!]
+  group: Group
+  network: ProNetwork
 }
 
-type Event {
-    id: AlphaNumericId!
-    title: String
-    eventUrl: String!
-    shortUrl: String!
-    description: String
-    shortDescription: String
-    host: User
-    hosts: [User!]
-    howToFindUs: String
-    dateTime: ZonedDateTime!
-    endTime: ZonedDateTime!
-    maxTickets: Int!
-    going: Int!
-    tickets: EventTicketsConnection!
-    isOnline: Boolean!
-    venue: Venue
-    onlineVenue: OnlineVenue
-    status: EventStatus
-    eventType: EventType
-    image: EventImage!
-    rsvpSettings: RsvpOpenSettings
-    group: Group
-    numberOfAllowedGuests: Int!
+input AnnounceEventInput {
+  eventId: ID!
 }
 
-type EventImage {
-    id: NumericId!
-    baseUrl: String!
+type AnnounceEventPayload {
+  """
+  Null if event has been successfuly announced or array of errors if something gone wrong
+  """
+  errors: [PayloadError!]
+
+  """The event which has been announced"""
+  event: Event
 }
 
-type EventsConnection {
-    pageInfo: PageInfo!
-    count: Int!
-    edges: [EventsEdge!]!
+"""
+type used in @purgePageCache directive
+Supported Types of Meetup Entities that the Fastly Cache is aware of
+"""
+enum CacheEntityType {
+  EVENT
+  GROUP
 }
 
-type EventsEdge {
-    cursor: String!
-    node: Event!
-}
+input CityLocation {
+  """Borough/Town/District name"""
+  borough: String
 
-type EventTicketsConnection {
-    pageInfo: PageInfo!
-    count: Int!
-    edges: [EventTicketsEdge!]!
-}
-
-type EventTicketsEdge {
-    cursor: String!
-    node: Ticket!
-}
-
-type Group {
-    id: AlphaNumericId!
-    isMember: Boolean!
-    isOrganizer: Boolean!
-    isPrimaryOrganizer: Boolean!
-    urlname: String
-    upcomingEvents(input: ConnectionInput!): EventsConnection!
-    unifiedEvents(input: ConnectionInput!): EventsConnection!
-    membershipMetadata: GroupMembership
-}
-
-type GroupMembership {
-    status: MembershipStatus!
-    role: MemberRole
-}
-
-type Image {
-    id: AlphaNumericId!
-    baseUrl: String
-    preview: String
-}
-
-type Mutation {
-    createEvent(input: CreateEventInput!): CreateEventPayload!
-    closeEventRsvps(input: CloseEventRsvpsInput!): CloseEventRsvpsPayload!
-}
-
-type OnlineVenue {
-    type: OnlineVenueType!
-    url: String
-}
-
-type PageInfo {
-    hasNextPage: Boolean!
-    hasPreviousPage: Boolean!
-    startCursor: String!
-    endCursor: String!
-}
-
-type PayloadError {
-    code: String!
-    message: String!
-    field: String
-}
-
-type Query {
-    event(id: ID!): Event
-    groupByUrlname(urlname: String!): Group
-    self: User
-}
-
-type RsvpOpenSettings {
-    rsvpOpenTime: DateTime
-    rsvpCloseTime: DateTime
-    rsvpsClosed: Boolean
-}
-
-type Ticket {
-    id: AlphaNumericId!
-    event: Event!
-    user: User!
-    membership: GroupMembership
-    quantity: Int!
-    createdAt: ZonedDateTime!
-    updatedAt: ZonedDateTime!
-    url: String! # The event's URL
-    guestsCount: Int!
-}
-
-type User {
-    id: NumericId!
-    name: String
-    isAdmin: Boolean
-    memberPhoto: Image
-}
-
-type Venue {
-    id: AlphaNumericId!
-    name: String
-    address: String
-    city: String
-    lat: Float!
-    lng: Float!
-}
-
-enum EventStatus {
-    PUBLISHED
-    DRAFT
-    CANCELLED
-    AUTOSCHED
-    ACTIVE
-    PAST
-}
-
-enum EventType {
-    ONLINE
-    PHYSICAL
-}
-
-enum MemberRole {
-    ORGANIZER
-    COORGANIZER
-    ASSISTANT_ORGANIZER
-    EVENT_ORGANIZER
-    MEMBER
-}
-
-enum MembershipStatus {
-    PENDING_PAYMENT
-    GROUP_BLOCKED_ORG
-    GROUP_BLOCKED
-    ABANDONED
-    DEAD
-    BOOTED
-    BOUNCED
-    UNAPPROVED
-    REMOVED
-    BLOCKED
-    INCOMPLETE
-    PENDING
-    ACTIVE
-    LEADER
-}
-
-enum OnlineVenueType {
-    GOOGLEHANGOUT
-    ZOOM
-    SKYPE
-    OTHER
-}
-
-enum PublishStatus {
-    DRAFT
-    PUBLISHED
-    # not sure if there can be more variants since documentation for this enum is missing
+  """Neighborhood name"""
+  neighborhood: String
 }
 
 input CloseEventRsvpsInput {
-    eventId: ID!
+  """Identifier of event which will be edited"""
+  eventId: ID!
 }
 
-input ConnectionInput {
-    first: Int
-    last: Int
-    after: String
-    before: String
-    reverse: Boolean
+type CloseEventRsvpsPayload {
+  errors: [PayloadError!]
+
+  """The updated event, if successful"""
+  event: Event
+}
+
+"""
+Event communication tools settings.
+@deprecated(reason: "feature removed")
+"""
+input CommunicationSettingsInput {
+  """Setting responsible for event chat."""
+  chat: Boolean
+
+  """Setting responsible for event comments."""
+  comments: Boolean
+}
+
+enum ContentType {
+  GIF
+  JPEG
+  PNG
+}
+
+enum CovidPrecautionMaskPolicy {
+  NOT_REQUIRED
+  REQUIRED
+}
+
+input CovidPrecautionsInput {
+  """
+  Free-form detailed information organizer provides
+    
+  To clear the details from an existing event, provide an empty string
+  """
+  details: String
+
+  """Policy on wearing masks"""
+  masks: CovidPrecautionMaskPolicy
+
+  """Policy on vaccination"""
+  vaccinations: CovidPrecautionVaccinePolicy
+
+  """Venue type"""
+  venueType: CovidPrecautionVenueType
+}
+
+enum CovidPrecautionVaccinePolicy {
+  NOT_REQUIRED
+  REQUIRED
+}
+
+enum CovidPrecautionVenueType {
+  INDOORS
+  NONE
+  OUTDOORS
 }
 
 input CreateEventInput {
-    groupUrlname: String!
-    title: String! # Must be at least 1 character and may not be longer than 80 characters.
-    description: String! # in simple HTML format. May not be longer than 50000 characters.
-    startDateTime: DateTime!
-    duration: Duration
-    rsvpSettings: RsvpSettings,
-    eventHosts: [Int!]
-    venueId: String # For online events, set to "online"
-    selfRsvp: Boolean
-    howToFindUs: String # the description for the location of the host(s) at the event venue. For online events this field is used for the event's url. To unset this field, provide an empty string
-    question: String # the RSVP survey question for the event. May not be longer than 250 characters. To unset this field, provide an empty string
-    featuredPhotoId: Int
-    publishStatus: PublishStatus
+  """Attrbute ids to associate with the event"""
+  attributes: [ID!]
+
+  """List of hosted defined precautions for COVID 19"""
+  covidPrecautions: CovidPrecautionsInput
+
+  """
+  String setting the description of the event, in simple HTML format. May not be longer than 50000 characters.
+  """
+  description: String!
+
+  """Representing event duration in ISO 8601 duration specified format"""
+  duration: String
+
+  """
+  List of up to 5 valid member ids who will be hosts of the event.
+  This implicitly includes the authenticated member when `selfRsvp` is true or not provided.
+  """
+  eventHosts: [Int!]
+
+  """
+  Positive integer representing a numeric identifier for a photo, which must be
+  one associated with this group. When undefined or 0, no photo is set.
+  """
+  featuredPhotoId: Int
+
+  """Representing attributes for paid events"""
+  feeOption: EventFeeOption
+
+  """Settings pretaining to fundraising for this event"""
+  fundraising: EventFundraisingInput
+  groupUrlname: String!
+
+  """
+  String setting the description for the location of the host(s) at the event venue.
+  For online events this field is used for the event's url.
+  """
+  howToFindUs: String
+
+  """Flag that indicates if this event is being copied from another event"""
+  isCopy: Boolean
+
+  """Representing adjusted venue latitude and longitude"""
+  location: PointLocation
+
+  """Pro Network Event settings"""
+  proNetworkEvents: ProNetworkEventsInput
+
+  """
+  Indicates whether an event will be published to the group or as a draft
+  visible only to the leadership team.  This defaults to "PUBLISHED".
+  """
+  publishStatus: PublishStatus
+
+  """
+  String setting the RSVP survey question for the event. May not be longer than 250 characters.
+  """
+  question: String
+
+  """Representing attributes to schedule recurring event"""
+  recurring: RecurringEvents
+
+  """Representing rsvp settings (open/close time etc.)"""
+  rsvpSettings: RsvpSettings
+
+  """
+  Representing attributes survey questions which will be available for Pro admins
+  """
+  rsvpSurvey: RsvpSurvey
+
+  """
+  Boolean value indicating whether the authenticated member will be RSVP'd to the event upon creation.
+  This defaults to true.
+  """
+  selfRsvp: Boolean
+
+  """Speaker details"""
+  speakerDetails: SpeakerDetailsInput
+
+  """Field representing event start time"""
+  startDateTime: String!
+
+  """Template Id to store a mapping between the event and the template"""
+  templateId: ID
+
+  """
+  String setting the name of the event. Must be at least 1 character and may not be longer than 80 characters.
+  """
+  title: String!
+
+  """Topic ids to associate with the event"""
+  topics: [ID!]
+
+  """
+  Representing a numeric identifier for a venue. For online events use the string alias 'online'.
+  """
+  venueId: String
+
+  """
+  List of venues in which given event will take place at.
+  Needed only for the events with the type HYBRID at the moment.
+  Only one ONLINE event type id should be passed here
+  AND only PHYSICAL event type - for the venueId field.
+  """
+  venueIds: [String!]
+
+  """
+  Separate options for multiple venues, used only for hybrid events.
+  Provided venue ids have to correspond to venueIds under event type.
+  Alias 'online' can be used instead of online venue id.
+  This field will be ignored for non-hybrid events.
+  """
+  venueOptions: [VenueOptionInput!]
+
+  """
+  Field indicating whether the event venue and host location description
+  will be visible to non-members of the hosting group.
+  """
+  venueVisibility: EventVenueVisibility
+
+  """Zoom meeting id (64-bit integer number)."""
+  zoomMeetingId: ID
+}
+
+type CreateEventPayload {
+  """
+  Null if creation was successful or array of errors if something gone wrong
+  """
+  errors: [PayloadError!]
+
+  """The created draft of the event"""
+  event: Event
+}
+
+input CreateGroupDraftInput {
+  """What members of the group will be called. Can be at most 32 characters"""
+  customMembersLabel: String
+
+  """Summary of what the Meetup group is about in simple HTML format"""
+  description: String
+
+  """Group Location"""
+  location: GroupLocation
+
+  """Display name of the group. Can be at most 60 characters"""
+  name: String
+
+  """
+  Sets the specified topics to the group overwriting any existing topics. Topics
+  are identified by ids and can be obtained from find topics query
+  """
+  topics: [ID!]
+
+  """
+  Name used for the group's web address on meetup.com. Must be between 6 and 60 characters
+  """
+  urlname: String
+}
+
+type CreateGroupDraftPayload {
+  errors: [PayloadError!]
+  group: Group
+
+  """A token identifying a group draft"""
+  token: ID
+}
+
+input CreateVenueInput {
+  address: String!
+  city: String!
+
+  """lower case two character country code"""
+  country: String!
+  groupId: ID
+  name: String!
+
+  """if country us us or ca, state is required otherwise it may be omitted"""
+  state: String
+
+  """When not provided, defaults to public"""
+  visibility: EventVenueVisibility
+}
+
+type CreateVenuePayload {
+  """
+  In the event a duplicate venue in the system is detected, this list will
+  provide a list of suggestions you might have been looking for
+  """
+  didYouMean: [Venue!]
+  errors: [PayloadError!]
+  venue: Venue
+}
+
+enum Currency {
+  AUD
+  BRL
+  CAD
+  CHF
+  EUR
+  GBP
+  INR
+  JPY
+  KRW
+  PLN
+  RUB
+  THB
+  TRY
+  USD
+}
+
+"""A custom scalar that handles dates"""
+scalar Date
+
+"""A custom scalar that handles timestamps"""
+scalar DateTime
+
+enum DayOfWeek {
+  FRIDAY
+  MONDAY
+  SATURDAY
+  SUNDAY
+  THURSDAY
+  TUESDAY
+  WEDNESDAY
+}
+
+input DeleteEventInput {
+  """Alphanumeric identifier for the event"""
+  eventId: ID!
+
+  """
+  Optional boolean parameter that, when set to true, fully deletes the event.
+  If set to false, this operation cancels the event instead
+  of completely removing it from the group's calendar.
+  This defaults to true when not set explicitly.
+  """
+  removeFromCalendar: Boolean
+
+  """
+  Optional boolean parameter that, when set to true, will update all future
+  recurrences of this event if this event belongs to an event series.
+  Requesting this for an event that doesn't belong to an active series will result in an error.
+  """
+  updateSeries: Boolean
+}
+
+type DeleteEventPayload {
+  """
+  Null if event has been successfuly deleted or array of errors if something gone wrong
+  """
+  errors: [PayloadError!]
+
+  """True if event has been successfuly deleted"""
+  success: Boolean
+}
+
+input DeleteGroupDraftInput {
+  """Group draft token"""
+  token: String!
+}
+
+"""Dues interval enum."""
+enum DuesInterval {
+  """Yearly interval."""
+  ANNUALLY
+
+  """Monthly interval."""
+  MONTHLY
+}
+
+enum DuesPaymentType {
+  OTHER
+  PAYPAL
+  STRIPE
+}
+
+type DuesSettings {
+  """Fee amount returned in cents"""
+  amount: Float!
+  currency: Currency
+  feeDescription: String
+  interval: DuesInterval
+  paymentType: DuesPaymentType!
+  reasons: GroupDuesReasons!
+  trialPeriodDays: Int
+}
+
+"""A custom scalar that handles duration"""
+scalar Duration
+
+type EarlyBirdDiscount {
+  """Amount in dollars"""
+  amount: Float!
+  daysBefore: Int!
+
+  """
+  Remaining number of redemptions left for early bird discount, null if no max quantity defined
+  """
+  discountTicketsRemaining: Int
+
+  """Unique identifier of the early bird discount."""
+  id: ID!
+
+  """
+  Maximum amount of discounts available for given promotion, null if no max quantity defined
+  """
+  maximumQuantity: Int
+
+  """The datetime of when this promotion ends"""
+  promotionEnds: DateTime
+}
+
+input EarlyBirdDiscountInput {
+  """Amount in dollars"""
+  amount: Float!
+  daysBefore: Int!
+  maximumQuantity: Int
+}
+
+input EditEventInput {
+  """Whether changes should be applied to series of events"""
+  applyToSeries: Boolean
+
+  """Attrbute ids to associate with the event"""
+  attributes: [ID!]
+
+  """List of hosted defined precautions for COVID 19"""
+  covidPrecautions: CovidPrecautionsInput
+
+  """
+  If true, any connection to a saved zoom meeting is canceled from the event.
+  """
+  deleteZoomMeeting: Boolean
+
+  """
+  String setting the description of the event, in simple HTML format. May not be longer than 50000 characters.
+  """
+  description: String
+
+  """
+  Representing event duration in milliseconds. This defaults to 10800000 (3 hours).
+  """
+  duration: String
+
+  """List of up to 5 valid member ids who will be hosts of the event."""
+  eventHosts: [Int!]
+
+  """Identifier of event which will be edited"""
+  eventId: ID!
+
+  """
+  Positive integer representing a numeric identifier for a photo, which must be
+  one associated with this group. When undefined or 0, no photo is set.
+  """
+  featuredPhotoId: Int
+
+  """Representing attributes for paid events"""
+  feeOption: EventFeeOptionEdit
+
+  """Settings pretaining to fundraising for this event"""
+  fundraising: EventFundraisingInput
+
+  """
+  String setting the description for the location of the host(s) at the event venue.
+  For online events this field is used for the event's url.
+    
+  To unset this field, provide a empty string
+  """
+  howToFindUs: String
+
+  """Representing adjusted venue latitude and longitude"""
+  location: PointLocation
+
+  """Pro Network Event settings"""
+  proNetworkEvents: ProNetworkEventsInput
+
+  """
+  Indicates whether an event will be published to the group or as a draft
+  visible only to the leadership team.  This defaults to "PUBLISHED".
+  """
+  publishStatus: PublishStatus
+
+  """
+  String setting the RSVP survey question for the event. May not be longer than 250 characters.
+    
+  To unset this field, provide an empty string
+  """
+  question: String
+
+  """Representing attributes to schedule recurring event"""
+  recurring: RecurringEventsEdit
+
+  """Representing rsvp settings (open/close time etc.)"""
+  rsvpSettings: RsvpSettings
+
+  """
+  Representing attributes survey questions which will be available for Pro admins
+  """
+  rsvpSurvey: RsvpSurveyEdit
+
+  """Speaker details"""
+  speakerDetails: SpeakerDetailsInput
+
+  """Field representing event start time"""
+  startDateTime: String
+
+  """
+  String setting the name of the event. Must be at least 1 character and may not be longer than 80 characters.
+  """
+  title: String
+
+  """Topic ids to associate with the event"""
+  topics: [ID!]
+
+  """
+  Representing a numeric identifier for a venue. For online events use the string alias 'online'.
+    
+  To unset this field, provide a value of "0"
+  """
+  venueId: String
+
+  """
+  List of venues in which given event will take place at.
+  Needed only for the events with the type HYBRID at the moment.
+  Only one ONLINE event type id should be passed here
+  AND only PHYSICAL event type - for the venueId field.
+  """
+  venueIds: [String!]
+
+  """
+  Separate options for multiple venues, used only for hybrid events.
+  Provided venue ids have to correspond to venueIds under event type.
+  Alias 'online' can be used instead of online venue id.
+  This field will be ignored for non-hybrid events.
+  """
+  venueOptions: [VenueOptionInput!]
+
+  """
+  Field indicating whether the event venue and host location description
+  will be visible to non-members of the hosting group.
+  """
+  venueVisibility: EventVenueVisibility
+
+  """Zoom meeting id (64-bit integer number)."""
+  zoomMeetingId: ID
+}
+
+type EditEventPayload {
+  errors: [PayloadError!]
+  event: Event
+}
+
+type Event {
+  """Event creating datetime"""
+  createdTime: DateTime
+
+  """The scheduled time of the event"""
+  dateTime: DateTime
+
+  """Description of the event. Visibility may be limited for private groups"""
+  description: String!
+
+  """Duration of the event"""
+  duration: Duration
+
+  """Time when event ends"""
+  endTime: DateTime
+
+  """List of event hosts"""
+  eventHosts: [EventHost]
+
+  """Type of the event"""
+  eventType: EventType!
+
+  """
+  Name used for the event's web address on meetup.com. Must be between 6 and 60 characters
+  """
+  eventUrl: String!
+  featuredEventPhoto: PhotoInfo
+
+  """Optional organizer-defined fee payment settings"""
+  feeSettings: EventFeeSettings
+
+  """the group this event belongs to"""
+  group: Group
+  guestLimit: Int
+  guestsAllowed: Boolean!
+
+  """Returns a connection for the RSVP's for the hosts of the event."""
+  hostRsvps(after: String, first: Int): HostRsvpConnection!
+
+  """
+  String describing the location event venue. Visibility may be limited for private groups
+  For online events this field is used for the event's url.
+  """
+  howToFindUs: String
+
+  """
+  A unique but unstable identifier for the event.
+  Recurring events that have see activity may change the value of this identifier.
+  """
+  id: ID!
+
+  """True the current member attending this event"""
+  isAttending: Boolean!
+
+  """True if the current member has saved this event"""
+  isSaved: Boolean!
+
+  """Maximum amount of RSVP spots for the event"""
+  maxTickets: Int
+
+  """Network event details"""
+  networkEvent: NetworkEvent
+  numberOfAllowedGuests: Int!
+  photoAlbum: EventPhotoAlbum
+
+  """Get the current member's RSVP for the event if any"""
+  rsvp: Rsvp
+
+  """Get a list of RSVP questions for the event. Visibility may be limited"""
+  rsvpQuestions: [RsvpQuestion!]!
+
+  """
+  Search for members RSVP's in this event. Visibility may be limited for private groups
+  """
+  rsvpSearch(after: String, filter: RsvpSearchFilter!, first: Int): RsvpSearchConnection!
+  rsvpSettings: RsvpOpenSettings!
+
+  """
+  Get the current member's RSVP state for the event
+  Uses own memberId if nothing was provided.
+  """
+  rsvpState: RsvpState!
+
+  """
+  Connections of filterable rsvps. Full list of information may be limited for private groups
+  """
+  rsvps(
+    after: String
+    filter: RsvpFilter
+
+    """Defaults to 20 rsvps"""
+    first: Int
+
+    """
+    Controls the sort order or results
+    Note: RsvpSort.sortField LOCAL_TIME and DATETIME are equivalant in this contetx and apply to the rsvp's updated field
+    """
+    sort: RsvpSort
+  ): RsvpConnection!
+
+  """If this event is part of a series, this field describes that series"""
+  series: Series
+
+  """Speaker details"""
+  speakerDetails: SpeakerDetails
+
+  """Current status of the event"""
+  status: EventStatus!
+
+  """The event title for  display"""
+  title: String!
+
+  """A unique and stable identifier for the event."""
+  token: ID!
+
+  """A connection of topics for the event"""
+  topics: TopicsConnection!
+
+  """
+  Returns all venues for an event.
+  Will return a list of 1 venue for online or in person
+  Hybrid events will have 2 entries
+  """
+  venues: [Venue!]
+
+  """Waitlist handling when RSVP limit is reached"""
+  waitlistMode: WaitlistMode!
+
+  """A Zoom meeting ID if the event is online and uses Zoom integration."""
+  zoomMeetingId: ID
+}
+
+type EventEdge {
+  cursor: String!
+  node: Event!
+}
+
+enum EventFeeCurrency {
+  AUD
+  BRL
+  CAD
+  CHF
+  EUR
+  GBP
+  INR
+  JPY
+  KRW
+  PLN
+  RUB
+  THB
+  TRY
+  USD
+}
+
+input EventFeeOption {
+  """
+  Representing the amount of the event fee if a fee is charged for the event.
+  If the group is in the United States, this may not exceed 4999 (for any currency).
+  Otherwise, this may not exceed 1000000 (for any currency).
+  If the event fee is charged with WePay, this must be at least 1.0 USD
+  If not passed - default value '0' will be used.
+  """
+  amount: Int! = 0
+
+  """
+  String representing the currency for the event fee if a fee is charged for the event.
+  May be one of: AUD,BRL,CAD,CHF,EUR,GBP,INR,JPY,KRW,PLN,RUB,THB,TRY,USD
+  If not passed - default value 'USD' will be used.
+  """
+  currency: EventFeeCurrency! = USD
+
+  """Early bird discount for the event."""
+  earlyBirdDiscount: EarlyBirdDiscountInput
+
+  """
+  Used only in the 'edit' flow, ignored in 'create'.
+  Pass 'false' to make venue free (fee amount = 0).
+  Other fields will be substituted by default values in this case.
+  """
+  enabled: Boolean! = true
+
+  """
+  String representing the payment method for the event fee if a fee is charged for the event
+  If not passed - default value 'CASH' will be used.
+  """
+  paymentMethod: PaymentMethod! = CASH
+  paypalEmail: String
+
+  """A list of promo codes for the event."""
+  promoCodes: [EventPromoCodeInput!]
+
+  """
+  String setting the refund policy if the event has a fee. May not be longer than 250 characters.
+  """
+  refundPolicy: String
+}
+
+input EventFeeOptionEdit {
+  enabled: Boolean!
+  fee: EventFeeOption
+}
+
+type EventFeeSettings {
+  """Acceptable methods of payment"""
+  accepts: PaymentMethod!
+
+  """Amount of the fee"""
+  amount: Float!
+
+  """Currency accepted for fee"""
+  currency: EventFeeCurrency!
+
+  """Optional discounted price for early RSVPers."""
+  earlyBirdDiscount: EarlyBirdDiscount
+
+  """Return true if paid event and has active promo codes, false otherwise"""
+  hasPromoCodes: Boolean!
+
+  """
+  Organizer-defined terms for refunds. If this is defined, you must provide the
+  authenticated member a way to access this information before they can RSVP.
+  They will need to agree to these terms before they RSVP
+  See the following help article for more information on Meetup refund payment policies
+  https://help.meetup.com/hc/en-us/articles/360004065471-Payment-Policies
+  """
+  refundPolicy: RefundPolicy
+
+  """Indicates if a fee is required to RSVP"""
+  required: Boolean!
+}
+
+input EventFundraisingInput {
+  enabled: Boolean!
+}
+
+type EventHost {
+  member: Member
+  memberId: ID @deprecated(reason: "Use member instead")
+
+  """Group member photo"""
+  memberPhoto: PhotoInfo
+  name: String
+}
+
+type EventPhotoAlbum {
+  id: ID!
+  photoCount: Int!
+  title: String!
+}
+
+"""A promo code that a member can redeem to get a lower ticket price."""
+input EventPromoCodeInput {
+  """Event ticket price in currency units (e.g. USD) for this promotion."""
+  amount: Float!
+
+  """
+  Date range during which this promotion is active.
+  If omitted, the promotion comes into effect immediately and lasts until the event ends.
+  Date range cannot be set on promotions for recurring events.
+  """
+  dateRange: PromoCodeDateRangeInput
+
+  """Promo code that a member needs to submit to activate this promotion."""
+  promoCode: String!
+
+  """
+  Maximum number of tickets that can be purchased with this promotion.
+  If omitted, no limit is applied.
+  """
+  quantity: Int
+}
+
+type EventSearchConnection {
+  edges: [EventSearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type EventSearchEdge {
+  cursor: String!
+  node: Event!
+}
+
+input EventSearchFilter {
+  """ID of the event category"""
+  categoryId: ID
+  city: String
+
+  """City Boroughs or Neighborhoods Locations"""
+  cityLocations: [CityLocation!]
+  country: String
+
+  """
+  If true, consolidate events in series and return the latest event of the series/recurring events
+  """
+  doConsolidateEvents: Boolean
+
+  """If true, get a paypal event and put it into third search result"""
+  doPromotePaypalEvents: Boolean
+
+  """The latest date of event"""
+  endDateRange: DateTime
+
+  """The end time of day to filter events to."""
+  endTime: String
+
+  """Type of event: online or not"""
+  eventType: EventType
+
+  """Whether the event is in progress"""
+  isHappeningNow: Boolean
+  isStartingSoon: Boolean
+
+  """List of reasons to filter events more further"""
+  joinReasons: [ReasonForJoining!]
+
+  """Latitude of the location of an event"""
+  lat: Float!
+
+  """Longitude if the location of an event"""
+  lon: Float!
+
+  """Prioritize groups with recent RSVP"""
+  prioritizeRsvps: Boolean
+
+  """A pattern string for searching by occurrence in an event title"""
+  query: String!
+
+  """The search radius relative to location (in miles)"""
+  radius: Float
+
+  """The earliest date of event"""
+  startDateRange: DateTime
+
+  """
+  The start time of day to filter events from.
+  For every event between the startDateRange and endDateRange, the startTime is used to filter further
+  by time. Ex: Get all events in January. And from that, get events that start at 9 am.
+  """
+  startTime: String
+  state: String
+
+  """Prioritize groups with recent activity"""
+  timeDecayOffset: Int
+
+  """Prioritize groups with recent activity"""
+  timeDecayScale: Int
+
+  """
+  The id of topicCategory [from topic taxonomy]. Used if categoryId is empty.
+  """
+  topicCategoryId: ID
+
+  """Use time of day embedding"""
+  useTimeOfDayEmbedding: Boolean
+  zip: String
+}
+
+enum EventStatus {
+  ACTIVE
+  AUTOSCHED
+  AUTOSCHED_CANCELLED
+  AUTOSCHED_DRAFT
+  AUTOSCHED_FINISHED
+  BLOCKED
+  CANCELLED
+  CANCELLED_PERM
+  DRAFT
+  PAST
+  PENDING
+  PROPOSED
+  TEMPLATE
+}
+
+"""Type of event"""
+enum EventType {
+  """The event takes place both online and in-person"""
+  HYBRID
+
+  """The event takes place online"""
+  ONLINE
+
+  """The event takes place in-person"""
+  PHYSICAL
+}
+
+enum EventVenueVisibility {
+  GROUP
+  PUBLIC
+}
+
+type FeaturedEventPhotoConnection {
+  edges: [FeaturedEventPhotoConnectionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type FeaturedEventPhotoConnectionEdge {
+  cursor: String!
+  node: PhotoInfo!
+}
+
+input GeoLocation {
+  """The ISO_3166-1 country code for the country which contains the city"""
+  country: String
+
+  """The ZIP code of the city"""
+  zip: String
+}
+
+"""A Meetup Group"""
+type Group {
+  """A list of group active topics."""
+  activeTopics: [Topic!]!
+
+  """Indicates if members are allowed to upload photos."""
+  allowMemberPhotoUploads: Boolean!
+
+  """Shows current user's permission to upload photos to this group."""
+  canAddPhotos: Boolean!
+
+  """A city where a group is located."""
+  city: String
+
+  """A country where a group is located."""
+  country: String
+
+  """What this group calls its members"""
+  customMemberLabel: String
+
+  """Description of a group."""
+  description: String
+
+  """
+  Active group membership dues settings. Available only when dues are enabled in the group.
+  """
+  duesSettings: DuesSettings
+
+  """
+  an email address, representing an Organizer(s) of this Meetup Group. Meant to use for Organizer Announcements
+  """
+  emailAnnounceAddress: String
+
+  """Search for events in this group"""
+  eventSearch(after: String, filter: GroupEventSearchFilter!, first: Int): GroupEventSearchConnection! @deprecated(reason: "use 'events' instead")
+
+  """Events of the group"""
+  events(
+    after: String
+
+    """Options for filtering the results"""
+    filter: GroupEventFilter
+    first: Int
+
+    """Options for sorting the results"""
+    sort: SortOrder
+
+    """Event status"""
+    status: EventStatus
+  ): GroupEventConnection!
+
+  """Returns a list of recently used event photos"""
+  featuredEventPhotos(first: Int): FeaturedEventPhotoConnection!
+
+  """Date and time of when a group was created."""
+  foundedDate: DateTime
+
+  """
+  Groups analytics, only available for groups which are part of a pro network
+  """
+  groupAnalytics: GroupAnalytics
+
+  """Group unique identifier."""
+  id: ID!
+
+  """Checks whether the specified member is in this group."""
+  isMember: Boolean!
+
+  """
+  Checks whether the current member is the primary organizer of this group
+  """
+  isPrimaryOrganizer: Boolean!
+
+  """If the group is private"""
+  isPrivate: Boolean!
+
+  """Join mode for new group members."""
+  joinMode: GroupJoinMode!
+
+  """A group featured (cover) photo."""
+  keyGroupPhoto: PhotoInfo
+
+  """A latitude of a group location."""
+  lat: Float
+
+  """Link for the group on meetup.com"""
+  link: String
+
+  """A longitude of a group location."""
+  lon: Float
+
+  """The authenticated member's membership within this group if any"""
+  membershipMetadata: Membership
+
+  """Members in this group"""
+  memberships(after: String, filter: MembershipFilter, first: Int, sort: GroupMembershipSort): GroupMemberConnection!
+
+  """Name of a group."""
+  name: String!
+
+  """
+  A flag indicating whether new members are required to upload a photo to their group profile in order to join this group.
+  """
+  needsPhoto: Boolean
+
+  """
+  A flag indicating whether new members are required to answer organizer's questions in order to join this group.
+  """
+  needsQuestions: Boolean
+
+  """The primary organizer of the group. Null if the group is leaderless."""
+  organizer: Member
+
+  """A date when group joined pro network"""
+  proJoinDate: DateTime
+
+  """If a group is a part of a Pro network, the network properties."""
+  proNetwork(filter: ProNetworkFilter): ProNetwork
+
+  """
+  If a group requires new members to answer questions, a list of questions.
+  """
+  questions: [GroupQuestion!]!
+
+  """A list of links to this group in social networks."""
+  socialNetworks: [SocialNetwork!]!
+
+  """List of the sponsors for the group"""
+  sponsors(after: String, filter: SponsorsFilter, first: Int): ProGroupSponsorsConnection!
+
+  """A state, county or province where a group is located."""
+  state: String
+
+  """Statistics about group members."""
+  stats: GroupStats
+
+  """Group status."""
+  status: GroupStatus!
+
+  """
+  Timezone identifier as used by the IANA timezone database, for example: "US/Eastern", "Asia/Calcutta"
+  """
+  timezone: String
+
+  """A group topic category."""
+  topicCategory: TopicCategory
+
+  """Group unique URL path."""
+  urlname: String!
+
+  """Recently used in-person venues"""
+  venues(after: String, first: Int): GroupVenueConnection!
+
+  """Group featured video."""
+  video: GroupVideo
+
+  """A group welcome message."""
+  welcomeBlurb: String
+
+  """A zip code of a group location."""
+  zip: String
+}
+
+"""GroupAnalytics data, available for pro only"""
+type GroupAnalytics {
+  """Average age of the group members"""
+  averageAge: Float!
+
+  """Average number of RSVPs per event"""
+  averageRsvpsPerEvent: Float!
+
+  """Proportion of members in the group by gender"""
+  genderMembershipRatios: GroupGenderMembershipRatios!
+
+  """
+  Date of the last meetup event,
+  not present if the group never had a meetup event
+  """
+  lastEventDate: DateTime
+
+  """
+  Date of the next meetup event,
+  not present if the group doesn't have next meetup event
+  """
+  nextEventDate: DateTime
+
+  """Pro Network Tie Status"""
+  tieStatus: ProNetworkTieStatus!
+
+  """Number of the group members"""
+  totalMembers: Int!
+
+  """Number of the past meetup events"""
+  totalPastEvents: Int!
+
+  """Number of total RSVPs in the past"""
+  totalPastRsvps: Int!
+
+  """Number of members who RSVPed to a past event and RSVPs to a new event"""
+  totalRepeatRsvpers: Int!
+
+  """Number of the upcoming meetup events"""
+  totalUpcomingEvents: Int!
+}
+
+"""Reasons why dues are charged."""
+type GroupDuesReasons {
+  """Are dues to support group organizers?"""
+  compensation: Boolean
+
+  """Are dues to cover group expenses?"""
+  coverCosts: Boolean
+
+  """Are dues for keeping group members engaged?"""
+  engagement: Boolean
+
+  """Are dues to pay for equipment?"""
+  equipment: Boolean
+
+  """Are dues to make meetups better?"""
+  improveMeetups: Boolean
+
+  """Are dues collected for other reason?"""
+  otherWhy: Boolean
+
+  """Are dues reserved for unexpected expenses in the future?"""
+  reserveFund: Boolean
+
+  """The other reason text."""
+  whyCustom: String
+}
+
+type GroupEventConnection {
+  edges: [EventEdge!]!
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+""" Used by Group"""
+input GroupEventFilter {
+  """Show only events starting after the specified date."""
+  afterDateTime: DateTime
+
+  """Show only events starting before the specified date."""
+  beforeDateTime: DateTime
+
+  """Show only events hosted by the specified member."""
+  hostId: ID
+
+  """Show only events in the specified statuses."""
+  status: [EventStatus]
+
+  """
+  Show only events with title matching the specified string (case-insensitive).
+  """
+  title: String
+}
+
+input GroupEventPhotoCreateInput {
+  """Photo Album id"""
+  albumId: ID
+
+  """Content type"""
+  contentType: ContentType!
+
+  """Photo description"""
+  description: String
+  eventId: ID
+
+  """Meetup Group id"""
+  groupId: ID!
+  isVertical: Boolean
+
+  """The name of the album"""
+  newAlbumName: String
+  orderId: String
+
+  """Photo type"""
+  photoType: PhotoType!
+
+  """Set as main group photo"""
+  setAsMain: Boolean!
+}
+
+type GroupEventSearchConnection {
+  edges: [GroupEventSearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type GroupEventSearchEdge {
+  cursor: String!
+  node: Event!
+}
+
+"""Status of event for Group Event search"""
+enum GroupEventSearchEventStatus {
+  DRAFT
+  PAST
+  UPCOMING
+}
+
+input GroupEventSearchFilter {
+  """A textual query containing event content to find"""
+  query: String!
+
+  """status of the event. defaults to UPCOMING"""
+  status: GroupEventSearchEventStatus
+}
+
+type GroupGenderMembershipRatios {
+  """Proportion of members who identify as female"""
+  femaleRatio: Float!
+
+  """Proportion of members who identify as male"""
+  maleRatio: Float!
+
+  """Proportion of members who identify as gender other than male or female"""
+  otherRatio: Float!
+
+  """Proportion of members whose gender is unknown"""
+  unknownRatio: Float!
+}
+
+enum GroupJoinMode {
+  APPROVAL
+  CLOSED
+  OPEN
+}
+
+"""Group Location (if any is provided, the other one is required)"""
+input GroupLocation {
+  geoLocation: GeoLocation
+  pointLocation: PointLocation
+}
+
+type GroupMemberConnection {
+  edges: [GroupMemberEdge!]!
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+type GroupMemberCounts {
+  """total number of members"""
+  all: Int!
+
+  """total banned members"""
+  banned: Int!
+
+  """total number of members on leadership team"""
+  leadership: Int!
+
+  """total pending members"""
+  pending: Int!
+
+  """total number of members pending payment"""
+  pendingPayment: Int!
+}
+
+type GroupMemberEdge {
+  cursor: String!
+  metadata: Membership
+  node: Member
+}
+
+input GroupMembershipSort {
+  sortField: GroupMembershipSortField
+  sortOrder: SortOrder
+}
+
+enum GroupMembershipSortField {
+  DUES
+  JOIN_DATE
+  LAST_VISITED
+  NAME
+  ROLE
+}
+
+"""
+#########################
+ search and filters
+#########################
+"""
+enum GroupMembersNamedQuery {
+  """
+  query for a set of "most active" Members of a Group
+  originally, in order to use in Step Up email to target this group of users
+  the definition of "most active" is volatile and business-defined heuristic
+  maintained by #notifications
+  """
+  TOP_ACTIVE_MEMBERS_IN_GROUP
+}
+
+input GroupMutation {
+  """List of topics associated to group"""
+  activeTopics: [ID!]
+
+  """Indicates if members are allowed to upload photos"""
+  allowMemberPhotoUploads: Boolean
+  city: String
+
+  """The country/city/state/zip of the group"""
+  country: String
+
+  """
+  Positive integer representing a numeric identifier for a photo, which must be
+  one associated with this group. When undefined or 0, no photo is set.
+  This is refered to as Group.keyPhoto in Group responses
+  """
+  coverPhotoId: Int
+
+  """The way members are called"""
+  customMemberLabel: String
+
+  """Currency expressed in iso code 'USD', 'EUR', etc."""
+  feeCurrency: Currency
+
+  """The way a new member let into the group"""
+  joinMode: GroupJoinMode
+  lat: Float
+
+  """Indicates the username of the mailing list address"""
+  listAddress: String
+  lon: Float
+
+  """Read-able name of the Group that members see"""
+  name: String
+
+  """Indicates if new member profile have to provide a photo"""
+  needsPhoto: Boolean
+
+  """Indicates if new member must answer questions to join"""
+  needsQuestions: Boolean
+
+  """public or private"""
+  privacy: GroupPrivacy
+
+  """
+  List of 1 to 5 questions to be answered by new members when join the group
+  """
+  questions: [GroupQuestionInput!]
+  shortDesc: String
+
+  """List of social networks for the group"""
+  socialNetworks: [SocialNetworkInput!]
+  state: String
+
+  """The name added after meetup.com"""
+  urlname: String
+
+  """Group featured video."""
+  video: GroupVideoInput
+
+  """Welcome message to new members"""
+  welcomeBlurb: String
+  zip: String
+}
+
+enum GroupPrivacy {
+  PRIVATE
+  PUBLIC
+}
+
+type GroupQuestion {
+  id: ID!
+  question: String!
+  sort: Int!
+}
+
+"""Questions to be answered by new members when join the group"""
+input GroupQuestionInput {
+  id: ID!
+
+  """Question"""
+  question: String!
+
+  """The position that ocupate in the list presented to the new member"""
+  sort: Int!
+}
+
+type GroupSearchConnection {
+  edges: [GroupSearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type GroupSearchEdge {
+  cursor: String!
+  node: Group!
+}
+
+input GroupSearchFilter {
+  """ID of the event category"""
+  categoryId: ID
+  city: String
+  country: String
+
+  """Whether to look for groups with FROZEN status only"""
+  frozenOnly: Boolean
+
+  """Latitude of the location of a group"""
+  lat: Float!
+
+  """Longitude if the location of a group"""
+  lon: Float!
+
+  """Prioritize groups with recent RSVP"""
+  prioritizeRsvps: Boolean
+
+  """A pattern string for searching by occurrence in a group name"""
+  query: String!
+
+  """Get groups within a Radius from lat/lon. Default is 25."""
+  radius: Float
+  state: String
+
+  """Prioritize groups with recent activity"""
+  timeDecayOffset: Int
+
+  """Prioritize groups with recent activity"""
+  timeDecayScale: Int
+
+  """
+  The id of topicCategory [from topic taxonomy]. Used if categoryId is empty.
+  """
+  topicCategoryId: ID
+
+  """Use time of day embedding"""
+  useTimeOfDayEmbedding: Boolean
+  zip: String
+}
+
+type GroupStats {
+  eventRatings: GroupStatsEventRatings!
+  memberCounts: GroupMemberCounts!
+}
+
+"""Summary of group event ratings."""
+type GroupStatsEventRatings {
+  """An average rating across all events in the group."""
+  average: Float!
+
+  """A total number of star ratings left by members."""
+  totalRatings: Int!
+
+  """
+  A total number of reviews (stars, comments, likes/dislikes) left by members.
+  """
+  totalReviews: Int!
+}
+
+enum GroupStatus {
+  """Draft group"""
+  ABANDONED
+
+  """Manually changed via platform administration"""
+  BLOCKED
+
+  """Had a status of FROZEN for 15 days"""
+  DEAD
+  FAILED
+
+  """Does not have an active organizer"""
+  FROZEN
+
+  """
+  Has a organizer with a lapsed subscription.
+  Will change to FROZEN after 15 days
+  """
+  GRACE
+  ORG_CLOSED
+
+  """Has an organizer with an active subscription"""
+  PAID
+}
+
+"""
+#########################
+ relationships
+#########################
+"""
+type GroupVenueConnection {
+  edges: [GroupVenueEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type GroupVenueEdge {
+  cursor: String!
+  node: Venue!
+}
+
+"""Group featured video."""
+type GroupVideo {
+  """Video provider (hosting service)."""
+  provider: GroupVideoProvider!
+
+  """Video URL."""
+  url: String!
+}
+
+"""
+Group featured video input.
+Provide values for all fields in order to create or update a video.
+Set all fields to null in order to delete a video.
+Other combinations are invalid.
+"""
+input GroupVideoInput {
+  """Video provider (hosting service)."""
+  provider: GroupVideoProvider
+
+  """Video URL."""
+  url: String
+}
+
+"""Group video provider (hosting service)."""
+enum GroupVideoProvider {
+  VIMEO
+  YOUTUBE
+}
+
+enum GroupVisibility {
+  ALL
+  PRIVATE
+  PUBLIC
+}
+
+type HostRsvpConnection {
+  edges: [RsvpEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Only DESC order is supported at the moment"""
+input KeywordSort {
+  """Field for sorting"""
+  sortField: KeywordSortField
+
+  """Order of sorting"""
+  sortOrder: SortOrder
+}
+
+"""How should be sorted results of the search"""
+enum KeywordSortField {
+  """Results will be sorted by datetime"""
+  DATETIME
+
+  """Results will be sorted by relevance"""
+  RELEVANCE
+}
+
+"""ISO-8601 local date-time, e.g. 2023-09-19T15:01:52"""
+scalar LocalDateTime
+
+"""A registered member on Meetup"""
+type Member {
+  adminProNetworks: [ProNetwork!]!
+  bio: String
+  birthday: DateTime
+  city: String
+  country: String
+  email: String!
+  gender: MemberGender
+
+  """Highest current role of a member across all groups"""
+  highestCurrentRole: Role
+
+  """Unique identifier for member"""
+  id: ID!
+
+  """
+  Returns true if user is an Organizer, Co-Organizer, Assistant Organizer, or Event Organizer in any group
+  """
+  isLeader: Boolean!
+
+  """Returns true if member has an active member subscription"""
+  isMemberPlusSubscriber: Boolean!
+  isOrganizer: Boolean!
+
+  """Is on the leadership team of a pro group"""
+  isProOrganizer: Boolean!
+
+  """Is a primary organizer of a pro group"""
+  isProPrimaryOrganizer: Boolean!
+  lat: Float
+  lon: Float
+
+  """Events this member RSVP'd do"""
+  memberEvents(
+    after: String
+
+    """Filter events by their status. Defaults to ACTIVE"""
+    eventStatus: [EventStatus]
+    eventType: [EventType]
+    first: Int!
+
+    """When true, returns only the events the member is actively hosting"""
+    isHosting: Boolean
+    lat: Float
+    lon: Float
+    membershipsFilter: MembershipsFilter
+    radius: Float
+
+    """Member events sorting."""
+    sort: MemberEventSort
+
+    """
+    Get all events after this start date
+    NOTE: This will only be used if no cursor is provided.
+    It is intended to be used on the first request.
+    """
+    startDate: String
+  ): MemberEventConnection!
+  memberPhoto: PhotoInfo
+
+  """Represents a link to the member on meetup.com"""
+  memberUrl: String!
+
+  """
+  sort attribute:
+  the sortField/sortOrder only support sorting based on the group's upcoming events
+  """
+  memberships(after: String, filter: MembershipsFilter, first: Int, sort: MembershipSort): MemberGroupConnection!
+
+  """Display name for member"""
+  name: String
+
+  """Resolves a connection for this Member's list of Notifications"""
+  notifications(filter: MemberNotificationsFilter): MemberNotificationConnection
+
+  """
+  A number of groups where member is a primary organizer
+  will return 0 if visitor does not have privs to view this field
+  """
+  organizedGroupCount: Int!
+  preferredLocale: String!
+
+  """A list of reasons member has joined Meetup"""
+  reasonsForJoining: [ReasonForJoining!]
+
+  """A list of recommended topics to add"""
+  recommendedTopics(categoryIds: [ID!], first: Int): TopicsConnection!
+  rsvps(after: String, filter: RsvpFilter, first: Int, sort: RsvpSort): MemberRsvpConnection!
+
+  """Events this member saved"""
+  savedEvents(after: String, first: Int!, sort: SortOrder): MemberEventConnection!
+
+  """
+  selectedTimezone is manually selected by the user whereas
+  timezone below is automatically set.
+  """
+  selectedTimezone: String
+
+  """Represents DateTime when member was created"""
+  startDate: DateTime
+  state: String
+  status: MemberStatus!
+  username: String
+  zip: String
+}
+
+type MemberAnalytics {
+  """The number of attended events"""
+  eventsAttended: Int
+
+  """Count of groups where user is actual member"""
+  groupsCount: Int
+
+  """Whether a User is organizer"""
+  isOrganizer: Boolean
+  joinTime: DateTime
+
+  """The time when the last activity occured"""
+  lastAccessTime: DateTime
+
+  """Members groups inside pro network"""
+  memberships: [Membership!]
+
+  """Highest member role across all groups within Pro network"""
+  role: Role
+}
+
+type MemberEventConnection {
+  edges: [MemberEventEdge!]!
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+"""
+The directed relationship between Member -> Event
+A Member can be associated with an Event
+e.g. a Member attends an Event, a Member hosts an Event
+"""
+type MemberEventEdge {
+  cursor: String!
+  node: Event!
+  rsvpState: RsvpState
+}
+
+"""Member events connection sorting."""
+input MemberEventSort {
+  """Sort field. Defaults to LOCAL_TIME."""
+  sortField: MemberEventSortField
+
+  """Sort order. Defaults to ASC."""
+  sortOrder: SortOrder
+}
+
+"""Member events sort options."""
+enum MemberEventSortField {
+  """Sort member events by last creation time."""
+  CTIME
+
+  """Sort member events by local time."""
+  LOCAL_TIME
+
+  """Sort member events by last modification time."""
+  MTIME
+
+  """
+  Sort member events by a role the member has in the corresponding group.
+  """
+  ROLE
+}
+
+enum MemberGender {
+  FEMALE
+  MALE
+  NONE
+  NOT_CHECKED
+  OTHER
+}
+
+"""
+#########################
+ relationships
+#########################
+"""
+type MemberGroupConnection {
+  edges: [MemberGroupEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+
+type MemberGroupEdge {
+  cursor: String!
+
+  """The membership information associated with this Member and Group"""
+  metadata: Membership
+
+  """The group a member has an association with"""
+  node: Group
+}
+
+type MemberNotificationConnection {
+  edges: [MemberNotificationEdge!]!
+  pageInfo: PageInfo
+  totalCount: Int
+  unreadCount: Int
+}
+
+type MemberNotificationEdge {
+  cursor: String!
+  node: Notification!
+}
+
+input MemberNotificationsFilter {
+  """Limits to the notifications to only those for organizers"""
+  organizerOnly: Boolean
+}
+
+type MemberRsvpConnection {
+  edges: [RsvpEdge!]!
+  pageInfo: PageInfo!
+
+  """total of RSVPS according to a provided filter"""
+  totalCount: Int!
+}
+
+"""Represents a specific Member in the context of a specific Group"""
+type Membership {
+  bio: String
+  dues: MembershipDues
+  joinTime: DateTime
+  lastAccessTime: DateTime
+
+  """
+  The role of the Member within this group. This determines the member's action and visibility
+  permissions. This may be null in cases where the member does not have an active status, i.e. PENDING_PAYMENT
+  """
+  role: Role
+
+  """Rsvp statistics associated with this member"""
+  rsvpStats: MembershipRsvpStats!
+  status: MembershipStatus!
+}
+
+"""
+The last known state of member's dues in a group.
+
+The state is preserved across a member leaving and re-joining a group,
+so that a user may have a dues record in a group while not being a member of that group.
+"""
+type MembershipDues {
+  """
+  The last known dues grace period end date. Empty if a member has never been in dues grace.
+  """
+  graceEndDate: DateTime
+
+  """The last known membership dues payment method."""
+  method: MembershipDuesMethod
+
+  """
+  The last known dues payment period end date. Empty if a member has never paid dues.
+  """
+  paidEndDate: DateTime
+
+  """The last known membership dues status."""
+  status: MembershipDuesStatus
+
+  """
+  The last known dues trial period end date. Empty if a member has never enrolled into a trial.
+  """
+  trialEndDate: DateTime
+}
+
+"""A membership dues payment collection method."""
+enum MembershipDuesMethod {
+  CASH
+  OTHER
+  PAYPAL
+  STRIPE
+  WEPAY
+}
+
+"""Membership dues status."""
+enum MembershipDuesStatus {
+  """
+  A member is exempt from paying dues by a group organizer, or the member IS the organizer.
+  """
+  EXEMPT
+
+  """A member missed their scheduled dues payment."""
+  GRACE
+
+  """A member has paid dues."""
+  PAID
+
+  """A member is in dues trial."""
+  TRIAL
+
+  """A member has never paid dues."""
+  UNPAID
+}
+
+"""Membership filter on group"""
+input MembershipFilter {
+  excludeMemberIds: [Int!]
+  memberIds: [Int!]
+
+  """Filter memberships by user name"""
+  name: String
+  namedQuery: GroupMembersNamedQuery
+  status: [MembershipStatus]
+}
+
+type MembershipRsvpStats {
+  """total overall count of no show attendances"""
+  noShowCount: Int!
+}
+
+input MembershipsFilter {
+  """Filters memberships based on group"""
+  groupIds: [ID!]
+
+  """Filters memberships based on group status"""
+  groupStatus: [GroupStatus!]
+
+  """
+  Filter memberships down to those where the member was a guest host for an event
+  """
+  guestEventHosted: Boolean
+
+  """
+  When status is provided includes LEADER, leaderSubset indicates a subset of the LEADER status to be returned
+  """
+  leaderSubset: MembershipsFilterLeaderSubset
+
+  """Groups with no upcoming events"""
+  noUpcomingEvents: Boolean
+
+  """Only groups with dues"""
+  onlyDues: Boolean
+
+  """Filters memberships based on membership status"""
+  status: [MembershipStatus]
+}
+
+enum MembershipsFilterLeaderSubset {
+  """only the primary leader"""
+  PRIMARY
+
+  """
+  only the secondary leaders (Co-Organizer, Assistant Organizers, Event Organizers)
+  """
+  SECONDARY
+}
+
+input MembershipSort {
+  sortField: MembershipSortField
+  sortOrder: SortOrder
+}
+
+enum MembershipSortField {
+  CREATE_TIME
+  EVENT_DATE
+  LEADERSHIP_STATUS
+
+  """Sort by leadership status, then by group name"""
+  LEADERSHIP_STATUS_NAME
+
+  """Sort by the number of hosted events the requesting member as RSVP'd to"""
+  SELF_RSVP_COUNT
+}
+
+enum MembershipStatus {
+  ABANDONED
+
+  """Active member that is not part of the Group's leadership team"""
+  ACTIVE
+  BLOCKED
+  BOOTED
+  BOUNCED
+  DEAD
+  GROUP_BLOCKED
+  GROUP_BLOCKED_ORG
+  INCOMPLETE
+
+  """
+  Leaders are Organizers, Co-Organizers, Assistant Organizers, OR Event Organizers
+  """
+  LEADER
+
+  """Pending organizer join approval"""
+  PENDING
+
+  """Pending membership dues payment"""
+  PENDING_PAYMENT
+  REMOVED
+  UNAPPROVED
+}
+
+enum MemberStatus {
+  ACTIVE
+  BLOCKED
+  BOUNCED
+  INVISIBLE
+  PENDING
+  PENDREMOVED
+  PREREGISTERED
+  REMOVED
+  UNVERIFIED
+}
+
+input MonthlyRecurrence {
+  """The day of the week this event will be hosted on"""
+  monthlyDayOfWeek: DayOfWeek!
+
+  """
+  Integer value between 1-7 (Monday-Sunday) for the day of week the recurrence occurs upon
+  """
+  monthlyWeekOfMonth: Int!
+}
+
+type MonthlyRecurrenceInfo {
+  """The day of the week event this will be hosted on"""
+  monthlyDayOfWeek: DayOfWeek!
+
+  """
+  Integer value between 1-7 (Monday-Sunday) for the day of week the recurrence occurs upon
+  """
+  monthlyWeekOfMonth: Int!
+}
+
+type Mutation {
+  addGroupToNetwork(input: AddGroupToNetworkInput!): AddGroupToNetworkPayload!
+
+  """Request to announce the event"""
+  announceEvent(input: AnnounceEventInput!): AnnounceEventPayload!
+
+  """Request to close a possibility to accept RSVPs"""
+  closeEventRsvps(input: CloseEventRsvpsInput!): CloseEventRsvpsPayload!
+
+  """Request to create an event"""
+  createEvent(input: CreateEventInput!): CreateEventPayload!
+
+  """Request to create a new group draft"""
+  createGroupDraft(
+    """Initial data for creating a draft of the group"""
+    input: CreateGroupDraftInput!
+  ): CreateGroupDraftPayload!
+
+  """Create a photo in a group album"""
+  createGroupEventPhoto(input: GroupEventPhotoCreateInput!): PhotoUploadWithUrlPayload!
+  createVenue(input: CreateVenueInput!): CreateVenuePayload!
+
+  """Request to delete event"""
+  deleteEvent(input: DeleteEventInput!): DeleteEventPayload!
+  deleteGroupDraft(input: DeleteGroupDraftInput!): Boolean!
+
+  """Request to edit the event"""
+  editEvent(input: EditEventInput!): EditEventPayload!
+
+  """Request to open a possibility to accept RSVPs"""
+  openEventRsvps(input: OpenEventRsvpsInput!): OpenEventRsvpsPayload!
+
+  """Request to publish the event draft"""
+  publishEventDraft(input: PublishEventDraftInput!): PublishEventDraftPayload!
+
+  """Request to publish the existing group draft"""
+  publishGroupDraft(
+    """Parameters of the group draft"""
+    input: PublishGroupDraftInput!
+  ): PublishGroupDraftPayload!
+
+  """
+  Changes any field of a group using its id to identify it.
+  Returns null if input.id does not match any group, otherwise returns the updated group fields
+  """
+  updateGroup(
+    """Group id"""
+    chapterId: ID!
+
+    """Parameters that will be used for group updating"""
+    input: GroupMutation!
+  ): Group
+
+  """Request to update the existing group draft"""
+  updateGroupDraft(
+    """Data for editiong a draft of the group"""
+    input: UpdateGroupDraftInput!
+  ): UpdateGroupDraftPayload!
+
+  """Allows a Group leader to group membership role for a given member"""
+  updateGroupMembershipRole(input: UpdateGroupMembershipRoleInput!): UpdateGroupMembershipRolePayload!
+}
+
+"""
+A link between between a collection of Events hosted within a Pro Network
+"""
+type NetworkEvent {
+  """Time network event was created"""
+  createdAt: DateTime
+
+  """Start time of network event"""
+  eventTime: DateTime
+
+  """Number of groups participating in the network event"""
+  groupCount: Int!
+
+  """Id of Network Event"""
+  id: ID!
+
+  """If network event has been announced"""
+  isAnnounced: Boolean
+
+  """Number of the network event attendees"""
+  rsvpCount: Int!
+
+  """Status of network event"""
+  status: String
+
+  """Timezone of network event"""
+  timezone: String
+
+  """Title of network event"""
+  title: String
+}
+
+input NetworkEventsFilter {
+  """Country"""
+  country: String
+
+  """The latest time an event starts"""
+  eventDateMax: DateTime
+
+  """The earliest time an event starts"""
+  eventDateMin: DateTime
+
+  """the excluded groups ids"""
+  excludedGroupIds: [ID!]
+
+  """the groups ids that may belong to the organization"""
+  groupIds: [ID!]
+
+  """the urlnames of chapters that may belong to the organization"""
+  groupUrlnames: [String!]
+
+  """Hosts of the event looking for"""
+  hosts: [String!]
+  isOnlineEvent: Boolean
+
+  """Latitude"""
+  latitude: Float
+
+  """Longitude"""
+  longitude: Float
+
+  """
+  Raw query to search from group name, description, leadership member name, or city
+  """
+  query: String
+
+  """Search radius in miles"""
+  radius: Float
+
+  """The maximum number of rsvps"""
+  rsvpsPerEventMax: Int
+
+  """The minimum number of rsvps"""
+  rsvpsPerEventMin: Int
+
+  """Statuses of the event looking for"""
+  status: [String!]
+
+  """Title of the event looking for"""
+  title: String
+
+  """Zip code"""
+  zip: String
+}
+
+input NetworkGroupsFilter {
+  """only active groups if true, only delisted if false"""
+  activeGroups: Boolean
+
+  """including only those groups that had event in the last specified days"""
+  activeWithinDays: Int
+
+  """Maximum range of the number of age"""
+  averageAgeMax: Int
+
+  """Minimum range of the number of age"""
+  averageAgeMin: Int
+
+  """the ids of the category of the group"""
+  categories: [ID!]
+
+  """Country"""
+  country: String
+
+  """the excluded groups ids"""
+  excludedGroupIds: [ID!]
+
+  """Maximum range of the date that the group founded"""
+  foundedDateMax: DateTime
+
+  """Minimum range of the date that the group founded"""
+  foundedDateMin: DateTime
+
+  """the groups ids that may belong to the organization"""
+  groupIds: [ID!]
+
+  """the urlnames of chapters that may belong to the organization"""
+  groupUrlnames: [String!]
+
+  """
+  including only those groups that did not have event in the last specified days
+  """
+  inactiveWithinDays: Int
+
+  """Maximum range of the date that the last meetup happened"""
+  lastEventMax: DateTime
+
+  """Minimum range of the date that the last meetup happened"""
+  lastEventMin: DateTime
+
+  """Latitude"""
+  latitude: Float
+
+  """The ids of leadership team members"""
+  leadershipMemberIds: [ID!]
+
+  """Longitude"""
+  longitude: Float
+
+  """Maximum range of the number of members"""
+  memberCountMax: Int
+
+  """Minimum range of the number of members"""
+  memberCountMin: Int
+
+  """Name of the group looking for"""
+  name: String
+
+  """Maximum range of the date that the next meetup is scheduled"""
+  nextEventMax: DateTime
+
+  """Minimum range of the date that the next meetup is scheduled"""
+  nextEventMin: DateTime
+
+  """Maximum range of the number of the past events held"""
+  pastEventsMax: Int
+
+  """Minimum range of the number of the past events held"""
+  pastEventsMin: Int
+
+  """Maximum range of the dates the groups joined Pro organization"""
+  proJoinDateMax: DateTime
+
+  """Minimum range of the dates the groups joined Pro organization"""
+  proJoinDateMin: DateTime
+
+  """
+  Raw query to search from group name, description, leadership member name, or city
+  """
+  query: String
+
+  """Search radius in miles"""
+  radius: Float
+
+  """Maximum range of the average number of repeat rsvpers"""
+  repeatRsvpersMax: Int
+
+  """Minimum range of the average number of repeat rsvpers"""
+  repeatRsvpersMin: Int
+
+  """Maximum range of the number of the upcoming events"""
+  upcomingEventsMax: Int
+
+  """Minimum range of the number of the upcoming events"""
+  upcomingEventsMin: Int
+
+  """Zip code"""
+  zip: String
+}
+
+input NetworkUsersFilter {
+  """The range of date from the past until today, for the recent activity"""
+  activeWithinDays: Int
+
+  """Searching only the members who can or cannot receive mass email"""
+  canReceiveEmails: Boolean
+
+  """Country"""
+  country: String
+
+  """Maximum number of attended events"""
+  eventsAttendedMax: Int
+
+  """Minimum number of attended events"""
+  eventsAttendedMin: Int
+
+  """The members to exclude from result"""
+  excludedUsers: [ID!]
+
+  """The groups which the member belongs to"""
+  groups: [ID!]
+
+  """The latest time limit for member join"""
+  joinDateTimeMax: DateTime
+
+  """The oldest time limit for member join"""
+  joinDateTimeMin: DateTime
+
+  """Latitude"""
+  latitude: Float
+
+  """Longitude"""
+  longitude: Float
+
+  """raw query string to search from member name or city"""
+  query: String
+
+  """Search radius in miles"""
+  radius: Float
+
+  """List of member roles to search by"""
+  roles: [Role!]
+
+  """Name of the member"""
+  userName: String
+
+  """The member ids that may belong to the organization"""
+  users: [ID!]
+
+  """Zip code"""
+  zip: String
+}
+
+"""An notable activity or event that happened on the platform"""
+type Notification {
+  category: NotificationCategory!
+  clicked: Boolean!
+  id: ID!
+  important: Boolean!
+  kind: NotificationKind!
+  link: String
+  photo: PhotoInfo
+  photoType: NotificationPhotoType
+  read: Boolean!
+  text: String
+  updatedAt: DateTime
+}
+
+"""
+derived from
+Act.Category.values().sorted.foreach(println)
+"""
+enum NotificationCategory {
+  COMMENT
+  DEFAULT
+  EVENT
+  GROUP
+  MONEY
+  PHOTO
+}
+
+"""
+derived from
+NotificationBusiness.KINDS.asScala.map(_.toUpperCase).toList.sorted.foreach(println)
+"""
+enum NotificationKind {
+  ATTENDANCE_REMINDER
+  COMMENT
+  CUSTOM
+  DONATION_EXPIRE_NOTICE
+  DONATION_POTENTIAL_PAYMENT
+  DUES
+  DUES_CONFIRM
+  DUES_TRIAL_NOTICE
+  EVENT_ANNOUNCE
+  EVENT_ANNOUNCE_TO_ORGS
+  EVENT_ANNOUNCE_UNTRUSTED
+  EVENT_CANCEL
+  EVENT_CHANGE
+  EVENT_CHAT_MESSAGE @deprecated(reason: "feature removed")
+  EVENT_INTEREST_ORG_PUSH
+  EVENT_REMINDER
+  EXTERNAL_URL
+  FINAL_ATTENDANCE_REMINDER
+  GROUP_ANNOUNCE
+  GROUP_ANNOUNCE_PUSH
+  INVITATION_ACCEPTANCE
+  JOIN
+  LIKE
+  MUG_COMM_ANNOUNCE
+  MUG_COMM_COMMENT
+  MUG_COMM_COMMENT_LIKE
+  MUG_COMM_CONVERSATION_LIKE
+  MUG_COMM_INVITE
+  NETWORK_EVENT_ANNOUNCE
+  NETWORK_EVENT_ANNOUNCE_TO_ORGS
+  NETWORK_EVENT_ANNOUNCE_UNTRUSTED
+  ORG_APPROVE
+
+  """deprecated"""
+  OUTSIDE_MUP_REC
+  PENDING_MEMBER
+  PHOTO
+  PHOTO_TAG
+  POST_ATTENDANCE
+  POST_EVENT_FEEDBACK
+  REPLY
+  RSVP
+  RSVP_CONFIRM
+  SAVED_EVENT_REMINDER
+  SPOT_OPEN
+  WEBVIEW_URL
+}
+
+enum NotificationPhotoType {
+  EVENT
+  MEMBER
+}
+
+input OpenEventRsvpsInput {
+  """Identifier of event which will be edited"""
+  eventId: ID!
+}
+
+type OpenEventRsvpsPayload {
+  errors: [PayloadError!]
+
+  """The updated event, if successful"""
+  event: Event
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type PayloadError {
+  code: String!
+  field: String
+  message: String!
+}
+
+enum PaymentMethod {
+  CASH
+  PAYPAL
+}
+
+enum PayStatus {
+  ECHECK_PENDING
+  EXEMPT
+  NONE
+  PAID
+  PARTIAL_REFUND
+  PENDING
+  REFUNDED
+  REFUND_PENDING
+}
+
+"""Standard photo information"""
+type PhotoInfo {
+  baseUrl: String
+  highResUrl: String
+  id: ID!
+  standardUrl: String
+  thumbUrl: String
+}
+
+enum PhotoType {
+  ALBUM_PHOTO
+  EMAIL_PHOTO
+  EVENT_CHAT_PHOTO @deprecated(reason: "feature removed")
+  EVENT_PHOTO
+  GROUP_PHOTO
+  MEMBER_PHOTO
+  NETWORK_BG
+  NETWORK_LOGO
+  PRO_BULK_GROUP_PHOTO
+  SPONSOR_LOGO
+}
+
+"""The result of request for uploading the image"""
+type PhotoUploadWithUrlPayload {
+  """
+  will only be populated if there is a non-system error during processing
+  """
+  error: PayloadError
+
+  """image url"""
+  imagePath: String
+
+  """The object which contain the image info"""
+  photo: PhotoInfo
+
+  """The url, which can be used for uploading the image"""
+  uploadUrl: String
+}
+
+"""
+type used in @purgePageCache directive
+Where can the EntityId be found?
+"""
+enum Pointcut {
+  """ in input parameters to mutation"""
+  INPUT
+
+  """ in output payload of successful mutation"""
+  OUTPUT
+}
+
+input PointLocation {
+  """Latitude of the city"""
+  latitude: Float!
+
+  """Longitude of the city"""
+  longitude: Float!
+}
+
+type ProEventRegistration {
+  answers: [ProEventRegistrationAnswer!]
+  event: Event!
+  member: Member!
+  updatedAt: DateTime!
+}
+
+type ProEventRegistrationAnswer {
+  answer: String!
+  question: String!
+}
+
+type ProEventRegistrationAnswersConnection {
+  edges: [ProEventRegistrationAnswersEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProEventRegistrationAnswersEdge {
+  cursor: String!
+  node: ProEventRegistration!
+}
+
+input ProEventRegistrationAnswersFilter {
+  eventIds: [ID!]
+}
+
+input ProEventRegistrationAnswersInput {
+  after: String
+  filter: ProEventRegistrationAnswersFilter
+  first: Int
+}
+
+type ProGroupSponsorsConnection {
+  edges: [SponsorEdge!]!
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+"""Date range when a promo code is valid."""
+input PromoCodeDateRangeInput {
+  """
+  Date in a group time zone when the promo code becomes unavailable.
+  An ISO-8601 local date-time, e.g. "2023-09-19T15:01:52".
+  """
+  endDate: LocalDateTime!
+
+  """
+  Date in a group time zone when the promo code becomes available.
+  An ISO-8601 local date-time, e.g. "2023-09-19T15:01:52".
+  """
+  startDate: LocalDateTime!
+}
+
+"""Represents pro network information"""
+type ProNetwork {
+  """Whether the network allows members to upload group and event photos"""
+  allowPhotoUploads: Boolean!
+
+  """Contact email of the network"""
+  contactEmail: String
+
+  """Description of the network"""
+  description: String
+
+  """
+  A list of event registration responses for the events across the entire Pro network
+  """
+  eventRegistrationAnswers(input: ProEventRegistrationAnswersInput!): ProEventRegistrationAnswersConnection!
+
+  """Search network groups"""
+  eventsSearch(input: ProNetworkEventsSearchInput!): ProNetworkEventsSearchConnection!
+
+  """External URL of the network"""
+  externalUrl: String
+
+  """Search network groups"""
+  groupsSearch(input: ProNetworkGroupsSearchInput!): ProNetworkGroupsSearchConnection!
+
+  """ID of the network"""
+  id: ID!
+
+  """If user's email is shared to a network"""
+  isProEmailShared: Boolean!
+
+  """Link for the network on meetup.com"""
+  link: String!
+
+  """Photo object for the logo"""
+  logo: PhotoInfo
+
+  """Search network members"""
+  membersSearch(input: ProNetworkMemberSearchInput!): ProNetworkMemberSearchConnection!
+
+  """Display name of the network"""
+  name: String!
+
+  """Pro network stats"""
+  networkAnalytics: ProNetworkAnalytics
+
+  """Payment model of the network"""
+  paymentModel: ProNetworkPaymentModel!
+
+  """Primary administrator of the network"""
+  primaryAdmin: Member
+
+  """Returns positive RSVPs for a network"""
+  rsvpsSearch(input: ProNetworkRsvpsSearchInput!): ProNetworkRsvpConnection!
+
+  """A list of links to network's social platforms"""
+  socialNetworks: [SocialNetwork!]!
+
+  """A list of network's sponsors"""
+  sponsors: [Sponsor!]!
+
+  """Status of the network, one of ACTIVE | INACTIVE | FROZEN"""
+  status: ProNetworkStatus!
+
+  """Get suggested network events"""
+  suggestedEvents(input: ProNetworkSuggestedEventsInput!): ProNetworkSuggestedEventsConnection!
+
+  """Urlname used to identify the network on meetup.com"""
+  urlname: String!
+}
+
+type ProNetworkAnalytics {
+  totalCountries: Int!
+  totalGroups: Int!
+  totalMembers: Int!
+}
+
+input ProNetworkEventsInput {
+  """A network filter to apply Event changes to"""
+  filterId: String
+
+  """An ID of an event we are copying from"""
+  fromEventId: ID
+
+  """A signifier to stop the propagation of this event"""
+  stopPropagation: Boolean
+
+  """An override the timezone the Event will be scheduled in"""
+  timezone: String
+}
+
+type ProNetworkEventsSearchConnection {
+  edges: [ProNetworkEventsSearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProNetworkEventsSearchEdge {
+  cursor: String!
+  node: Event!
+}
+
+input ProNetworkEventsSearchInput {
+  after: String
+  desc: Boolean
+  filter: NetworkEventsFilter
+  first: Int
+  sort: String
+}
+
+input ProNetworkFilter {
+  status: [ProNetworkTieStatus]
+}
+
+type ProNetworkGroupsSearchConnection {
+  edges: [ProNetworkGroupsSearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProNetworkGroupsSearchEdge {
+  cursor: String!
+  metadata: GroupAnalytics
+  node: Group!
+}
+
+input ProNetworkGroupsSearchInput {
+  after: String
+  desc: Boolean
+  filter: NetworkGroupsFilter
+  first: Int
+  networkEventFilterId: ID
+  sort: String
+}
+
+type ProNetworkMemberSearchConnection {
+  edges: [ProNetworkMemberSearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProNetworkMemberSearchEdge {
+  cursor: String!
+  metadata: MemberAnalytics
+  node: Member!
+}
+
+input ProNetworkMemberSearchInput {
+  after: String
+
+  """Whether to sort in descending order, defaults to false"""
+  desc: Boolean
+  filter: NetworkUsersFilter
+  first: Int
+
+  """Field to sort on, defaults to memberId"""
+  sort: String
+}
+
+enum ProNetworkPaymentModel {
+  OWNERSHIP
+  SPONSORSHIP
+}
+
+type ProNetworkRsvpConnection {
+  edges: [ProNetworkRsvpEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProNetworkRsvpEdge {
+  cursor: String!
+  node: Rsvp!
+}
+
+input ProNetworkRsvpsSearchInput {
+  after: String
+  first: Int
+}
+
+enum ProNetworkStatus {
+  ACTIVE
+  FROZEN
+  INACTIVE
+}
+
+type ProNetworkSuggestedEventsConnection {
+  edges: [ProNetworkSuggestedEventsEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProNetworkSuggestedEventsEdge {
+  cursor: String!
+  node: Event!
+}
+
+input ProNetworkSuggestedEventsFilter {
+  """Filter only online/physical events"""
+  isOnline: Boolean
+
+  """Latitude"""
+  latitude: Float!
+
+  """Longitude"""
+  longitude: Float!
+
+  """Search radius in miles"""
+  radius: Float
+}
+
+input ProNetworkSuggestedEventsInput {
+  filter: ProNetworkSuggestedEventsFilter!
+  first: Int
+}
+
+enum ProNetworkTieStatus {
+  ACTIVE
+  DELISTED
+  INACTIVE
+}
+
+input PublishEventDraftInput {
+  eventId: ID!
+}
+
+type PublishEventDraftPayload {
+  """
+  Null if event has been successfuly published or array of errors if something gone wrong
+  """
+  errors: [PayloadError!]
+
+  """The event with which the operation was carried out"""
+  event: Event
+}
+
+input PublishGroupDraftInput {
+  """Id of a ticket issued by a Pro network sponsoring the organizer."""
+  ticketId: ID
+  token: String!
+}
+
+type PublishGroupDraftPayload {
+  errors: [PayloadError!]
+  group: Group
+}
+
+enum PublishStatus {
+  """Visible to leadership team"""
+  DRAFT
+
+  """Visible to the group"""
+  PUBLISHED
+}
+
+type Query {
+  """Returns an event according to requested id"""
+  event(
+    """Alphanumeric identifier for the event"""
+    id: ID!
+  ): Event
+
+  """Search events using keywords and a location."""
+  eventSearch(
+    """
+    The start pointer for search results. For pagination. Default is base64 of `0`.
+    """
+    after: String
+
+    """
+    String propagated to the data api to allow customizing the clients experience
+    """
+    dataConfiguration: String
+
+    """Filter to minimize the list of results"""
+    filter: EventSearchFilter!
+
+    """Number of results to get."""
+    first: Int
+
+    """Sorts results"""
+    sort: KeywordSort
+  ): EventSearchConnection!
+
+  """Fetch a single group by its id"""
+  group(id: ID!): Group
+
+  """Fetch a single group by its urlname"""
+  groupByUrlname(urlname: String!): Group
+
+  """Search groups using keywords and a location."""
+  groupSearch(
+    """The start pointer for search results. For pagination. Default is ''."""
+    after: String
+
+    """
+    String propagated to the data api to allow customizing the clients experience
+    """
+    dataConfiguration: String
+
+    """Filter to minimize the list of results"""
+    filter: GroupSearchFilter!
+
+    """Number of results to get."""
+    first: Int
+  ): GroupSearchConnection!
+
+  """Query a Pro Network by either id or urlname"""
+  proNetwork(
+    """Pro Network Id"""
+    id: ID
+
+    """Pro Network Urlname"""
+    urlname: ID
+  ): ProNetwork
+
+  """Search events using only location."""
+  recommendedEvents(
+    """The start pointer for search results. Default is base64 of `0`."""
+    after: String
+
+    """
+    String propagated to the data api to allow customizing the clients experience
+    """
+    dataConfiguration: String
+
+    """Filter to minimize the list of results"""
+    filter: RecommendedEventsFilter!
+
+    """Number of results to get."""
+    first: Int
+
+    """Sorts results"""
+    sort: RecommendedEventsSort
+  ): RecommendedEventsConnection!
+  recommendedGroups(
+    """The start pointer for search results. Default is base64 of `0`."""
+    after: String
+
+    """Filter to minimize the list of results"""
+    filter: RecommendedGroupsFilter!
+
+    """Number of results to get."""
+    first: Int
+
+    """do not show new groups"""
+    ignoreNewGroups: Boolean
+  ): RecommendedGroupsConnection!
+
+  """The currently authenticated member"""
+  self: Member
+
+  """Suggest topics given a search term"""
+  suggestTopics(
+    after: String
+
+    """
+    Indicate if topics the member already added to own topics should be omitted.
+    """
+    excludeMemberTopics: Boolean
+    first: Int
+    query: String!
+  ): TopicsConnection!
+
+  """List top level topic categories"""
+  topicCategories(
+    """
+    indicates whether a special 'New Groups' category should be included in the response.
+    """
+    includeNewGroups: Boolean
+  ): TopicCategoryConnection
+}
+
+input QuestionInput {
+  id: ID
+  name: String!
+  options: [String!]
+  order: String!
+  required: Boolean!
+  type: QuestionType!
+}
+
+enum QuestionType {
+  MULTIPLE
+  PHONE
+  SINGLE
+  TEXT
+}
+
+enum ReasonForJoining {
+  BUILD_PROFESSIONAL_NETWORK
+  MAKING_FRIENDS
+  PRACTICE_HOBBY
+  SOCIALIZING
+}
+
+type RecommendedEventsConnection {
+  edges: [RecommendedEventsEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type RecommendedEventsEdge {
+  cursor: String!
+  node: Event!
+}
+
+input RecommendedEventsFilter {
+  """Boost events from chapters with at least N photos"""
+  boostEventsWithAtLeastNumImagesInChapter: Int
+
+  """The id of category of the event"""
+  categoryId: ID
+  city: String
+
+  """City Boroughs or Neighborhoods Locations"""
+  cityLocations: [CityLocation!]
+  country: String
+
+  """
+  If true, consolidate events in series and return the latest event of the series/recurring events
+  """
+  doConsolidateEvents: Boolean
+
+  """If true, get a paypal event and put it into third search result"""
+  doPromotePaypalEvents: Boolean
+
+  """The maximal date for filtering"""
+  endDateRange: String
+
+  """The end time of day to filter events to"""
+  endTime: String
+
+  """The type of the event"""
+  eventType: EventType
+
+  """
+  Who can join the group hosting the event and how. One of "approval", "closed", or "open"
+  """
+  groupJoinMode: GroupJoinMode
+
+  """Limit the event recommendations to a set of groups"""
+  groupList: [ID!]
+
+  """If the group hosting the event has join questions"""
+  hasJoinQuestions: Boolean
+
+  """ElasticSearch index or alias to query"""
+  indexAlias: String
+
+  """The event is happening now"""
+  isHappeningNow: Boolean
+
+  """Events starting within the hour"""
+  isStartingSoon: Boolean
+
+  """List of reasons to filter events more further"""
+  joinReasons: [ReasonForJoining!]
+
+  """
+  Latitude where the event is held.
+  If Lat/lon is not used, then "city, state, country" are used.
+  """
+  lat: Float
+
+  """
+  Longitude where the event is held
+  If Lat/lon is not used, then "city, state, country" are used.
+  """
+  lon: Float
+
+  """Penalize online events"""
+  penalizeOnlineEvents: Boolean
+
+  """Prioritize groups with recent RSVP"""
+  prioritizeRsvps: Boolean
+
+  """Radius of searching the event (in miles)."""
+  radius: Float
+
+  """If the group hosting the event requires a photo to join"""
+  requiresPhotoToJoin: Boolean
+
+  """The minimal date for filtering"""
+  startDateRange: String
+
+  """The start time of day to filter events from"""
+  startTime: String
+
+  """Location-related state"""
+  state: String
+
+  """Prioritize groups with recent activity"""
+  timeDecayOffset: Int
+
+  """Prioritize groups with recent activity"""
+  timeDecayScale: Int
+
+  """
+  The id of topicCategory [from topic taxonomy] of the event.
+  Used if categoryId is empty.
+  """
+  topicCategoryId: ID
+
+  """A list of topic ids which are used to filter for groups"""
+  topicList: [ID!]
+
+  """If the events should require payment or not"""
+  usePayPalEvents: Boolean
+
+  """Use time of day embedding"""
+  useTimeOfDayEmbedding: Boolean
+
+  """Location-related zip code"""
+  zip: String
+}
+
+input RecommendedEventsSort {
+  sortField: RecommendedEventsSortField
+}
+
+enum RecommendedEventsSortField {
+  """Results will be sorted by datetime"""
+  DATETIME
+  RELEVANCE
+}
+
+type RecommendedGroupEdge {
+  cursor: String!
+  node: Group!
+}
+
+type RecommendedGroupsConnection {
+  edges: [RecommendedGroupEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Filter for recommendedGroups (aka rankedGroups)"""
+input RecommendedGroupsFilter {
+  """
+  An optional category ID to further filter down to groups in a particular category
+  """
+  categoryId: ID
+
+  """Whether to look for groups with FROZEN status only"""
+  frozenOnly: Boolean
+
+  """
+  Who can join this group and how. One of "approval", "closed", or "open"
+  """
+  groupJoinMode: GroupJoinMode
+
+  """If the group has join questions"""
+  hasJoinQuestions: Boolean
+
+  """ElasticSearch index or alias to query"""
+  indexAlias: String
+
+  """The latitude of the centroid around which we want to show Groups"""
+  lat: Float!
+
+  """The longitude of the centroid around which we want to show Groups"""
+  lon: Float!
+
+  """Prioritize groups with recent RSVP"""
+  prioritizeRsvps: Boolean
+
+  """
+  A radius to filter groups outside the provided lat/lon. Default = 50 miles.
+  New-group search defaults to 3000 miles.
+  """
+  radius: Int
+
+  """If the group requires a photo to join"""
+  requiresPhotoToJoin: Boolean
+
+  """Prioritize groups with recent activity"""
+  timeDecayOffset: Int
+
+  """Prioritize groups with recent activity"""
+  timeDecayScale: Int
+
+  """
+  An optional topicCategoryID [from topic taxonomy] to further filter down to Groups in a particular category only.
+  Used if categoryId is empty.
+  """
+  topicCategoryId: ID
+
+  """A list of topic ids which are used to filter for groups"""
+  topicsList: [ID!]
+
+  """Use time of day embedding"""
+  useTimeOfDayEmbedding: Boolean
+
+  """A visibility group. Default = all"""
+  visibility: GroupVisibility
+}
+
+input RecurringEvents {
+  """An ISO date in the form `YYYY-MM-DD` or `2011-12-03`"""
+  endDate: String
+  monthlyRecurrence: MonthlyRecurrence
+  weeklyRecurrence: WeeklyRecurrence
+}
+
+input RecurringEventsEdit {
+  enabled: Boolean!
+  settings: RecurringEvents
+}
+
+type RefundPolicy {
+  days: Int
+  notes: String!
+}
+
+enum Role {
+  ASST_ORGANIZER
+  COORGANIZER
+  EVENT_ORGANIZER
+  MEMBER
+  ORGANIZER
+}
+
+type Rsvp {
+  """This member's answer to the event RSVP question"""
+  answer: RsvpAnswer
+  event: Event!
+
+  """The number of guests the member has for this event"""
+  guestsCount: Int!
+  id: ID!
+
+  """
+  Indicator that this RSVP is the first RSVP for member associated with the RSVP
+  """
+  isFirstEvent: Boolean!
+
+  """
+  Indicator that the member associated with this RSVP is a host for this event
+  """
+  isHost: Boolean!
+  member: Member!
+
+  """
+  Membership associated with the RSVP. This may be absent for former members
+  """
+  membership: Membership
+
+  """
+  The current event payment status for the RSVP for ticketed events from the perspective of the provided memberId.
+  A payment status is only available if the RSVP belongs to the calling member or if
+  the calling member has permission to manage money within the hosting group.
+  """
+  payStatus: PayStatus
+  status: RsvpStatus
+
+  """time this RSVP was last updated"""
+  updated: DateTime
+
+  """May be null for physical (in-person) events"""
+  venue: Venue
+}
+
+type RsvpAnswer {
+  text: String!
+}
+
+type RsvpConnection {
+  """total overall count of members marked as absent"""
+  absentCount: Int
+
+  """total overall count of members marked as attended"""
+  attendedCount: Int
+  edges: [RsvpEdge!]!
+
+  """total overall count of no RSVPS"""
+  noCount: Int
+
+  """total overall count of members marked as a no show"""
+  noShowCount: Int
+  pageInfo: PageInfo
+
+  """total overall count of RSVPs based on requested RSVP statuses"""
+  totalCount: Int
+
+  """total overall count of waitlisted RSVPS"""
+  waitlistCount: Int
+
+  """total overall count of yes RSVPS"""
+  yesCount: Int
+}
+
+type RsvpEdge {
+  cursor: String!
+  node: Rsvp!
+}
+
+enum RsvpEventStatus {
+  CANCELLED
+  PAST
+  PENDING
+  PROPOSED
+  UPCOMING
+}
+
+input RsvpFilter {
+  endDate: String
+
+  """
+  The status of the Event associated with the RSVP. defaults to all RsvpEventStatuses
+  """
+  eventStatus: [RsvpEventStatus]
+  eventType: [EventType]
+
+  """An optional group id to filter on"""
+  groupId: ID
+  lat: Float
+  lon: Float
+
+  """
+  Optional indicator to only include rsvps associated with hosts.
+  defaults to false.
+  """
+  onlyHosts: Boolean
+
+  """
+  Optional indicator to only include rsvps for members bringing guests.
+  defaults to false.
+  """
+  onlyWithGuests: Boolean
+
+  """
+  Optional indicator to only include rsvps for members who are
+  potential member connection candidates
+  """
+  potentialMemberConnections: Boolean
+  radius: Float
+
+  """
+  The status of the RSVP. defaults to YES and ATTENDED.
+  A filter containing HAVENT will only returned HAVENT responses, irrespective to other RsvpStatus included.
+  """
+  rsvpStatus: [RsvpStatus]
+
+  """
+  Currently only supported by Member.Rsvps() query
+  NOTE: This will only be used if no cursor is provided.
+        It is intended to be used on the first request.
+  """
+  startDate: String
+
+  """
+  An optional venueId to perform filtering by attending in-person or online
+  """
+  venueId: ID
+}
+
+type RsvpOpenSettings {
+  rsvpCloseTime: DateTime
+  rsvpOpenTime: DateTime
+  rsvpsClosed: Boolean
+}
+
+type RsvpQuestion {
+  questionId: ID!
+  text: String!
+}
+
+type RsvpSearchConnection {
+  edges: [RsvpEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input RsvpSearchFilter {
+  """The name of the member"""
+  query: String!
+
+  """An optional list of RSVP statuses to preform secondary filtering on"""
+  status: [RsvpStatus]
+
+  """
+  An optional venueId to perform filtering by attending in-person or online
+  """
+  venueId: ID
 }
 
 input RsvpSettings {
-    rsvpOpenTime: DateTime
-    rsvpCloseTime: DateTime
-    rsvpOpenDuration: Duration
-    rsvpCloseDuration: Duration
-    rsvpLimit: Int
-    guestLimit: Int
+  """
+  Positive integer representing the number of guests that members may include in
+  their RSVP, 0 inclusive. This defaults to 2.
+  """
+  guestLimit: Int
+
+  """
+  Duration, Should be according to the ISO 8601 duration specified format
+    
+  To remove the RSVP close time from an existing event, set rsvpCloseDuration to PT0S
+  """
+  rsvpCloseDuration: String
+
+  """
+  Field representing the time before which members
+  will be allowed to RSVP to the event in milliseconds since the epoch.
+  This can only be set if there is a start time for the event.
+  This defaults to no RSVP close time restriction.
+    
+  To remove the RSVP close time from an existing event, set rsvpCloseDuration to PT0S
+  """
+  rsvpCloseTime: String
+
+  """
+  Positive integer representing total number of RSVP slots available for the event.
+  When undefined or defined as 0, there will be no set limit.
+    
+  To remove the RSVP limit from an existing event, provide a value of 0
+  """
+  rsvpLimit: Int
+
+  """
+  Duration, Should be according to the ISO 8601 duration specified format
+    
+  To remove the RSVP open time from an existing event, set rsvpOpenDuration to PT0S
+  """
+  rsvpOpenDuration: String
+
+  """
+  Field representing the time after which members
+  will be allowed to RSVP to the event in milliseconds since the epoch.
+  This can only be set if there is a start time for the event.
+  This defaults to no RSVP open time restriction.
+    
+  To remove the RSVP open time from an existing event, set rsvpOpenDuration to PT0S
+  """
+  rsvpOpenTime: String
 }
+
+input RsvpSort {
+  """Order placing hosts first, followed by the provided or default sorting"""
+  hostsFirst: Boolean
+
+  """
+  Order placing pending member connections awaiting the authenticated member
+  first, if they are a subscriber, followed by the provided or default sorting
+  """
+  memberConnectionsFirst: Boolean
+
+  """The field to sort on. Defaults to RsvpSortField.RSVP_ID"""
+  sortField: RsvpSortField
+
+  """The direction of sort. Defaults to SortOrder.ASC"""
+  sortOrder: SortOrder
+}
+
+enum RsvpSortField {
+  """
+  In the case of member.rsvps, the normalized time of the event
+  In the case of event.rsvps, the rsvp's updated time
+  """
+  DATETIME
+
+  """
+  In the case of member.rsvps, the local time of the event according to the hosting groups timezone
+  In the case of event.rsvps the same as DATETIME
+  """
+  LOCAL_TIME
+
+  """The name of member rsvping"""
+  NAME
+
+  """
+  What's relevant to most members, you typically want pair this with SortOrder.DESC
+  """
+  RELEVANCE
+
+  """The unique id associated with the rsvp"""
+  RSVP_ID
+
+  """
+  Number of shared groups in common with a given member, you typically want pair this with SortOrder.DESC
+  """
+  SHARED_GROUPS
+}
+
+enum RsvpState {
+  CANCELLED
+  CLOSED
+  DUES
+  EXTERNAL_YES
+  FULL
+  JOIN_APPROVAL
+  JOIN_DUES_APPROVAL
+  JOIN_OPEN
+  NO
+  NONE
+  NOT_OPEN_YET
+  PAST
+  REQUESTED
+  RSVP
+  WAITLIST
+  YES
+}
+
+"""
+#########################
+ search and filters
+#########################
+"""
+enum RsvpStatus {
+  """An organizer confirmed attendance"""
+  ATTENDED
+
+  """A organizer confirmed absence"""
+  EXCUSED_ABSENCE
+
+  """An unresponded to RSVP"""
+  HAVENT
+
+  """No longer supported"""
+  MAYBE
+
+  """A member's response expressing they won't attend"""
+  NO
+
+  """
+  An organized flagged RSVP for a member that was expected to attend but didn't
+  """
+  NO_SHOW
+
+  """
+  A member's response expressing an intent to attend to an over capacity event
+  """
+  WAITLIST
+
+  """A member's response expressing an intent to attend"""
+  YES
+
+  """
+  A member's expressed intent to go to an paid event before payment has been processed
+  """
+  YES_PENDING_PAYMENT
+}
+
+input RsvpSurvey {
+  questions: [RsvpSurveyQuestion!]!
+  rsvpQuestions: [QuestionInput!]
+}
+
+input RsvpSurveyEdit {
+  enabled: Boolean!
+  survey: RsvpSurvey
+}
+
+enum RsvpSurveyQuestion {
+  COMPANY
+  FIRST_NAME
+  LAST_NAME
+  PHONE
+  ROLE
+  TOPIC
+}
+
+enum SavedEventsFilter {
+  ALL
+  FUTURE
+  PAST
+}
+
+"""Properties of an event series that recurs over a period of time"""
+type Series {
+  """A human-readable description of the series"""
+  description: String!
+
+  """An ISO date in the form `YYYY-MM-DD` or `2011-12-03`"""
+  endDate: String
+
+  """id of the series"""
+  id: ID
+
+  """
+  Returned for events that are part of a monthly recurring series of events
+  """
+  monthlyRecurrence: MonthlyRecurrenceInfo
+
+  """
+  Returned for events that are part of a weekly recurring series of events
+  """
+  weeklyRecurrence: WeeklyRecurrenceInfo
+}
+
+type SocialNetwork {
+  """Social network identifier"""
+  identifier: String
+
+  """Social network service"""
+  service: SocialNetworkService!
+
+  """Social network url"""
+  url: String
+}
+
+"""Social Network Input for group update"""
+input SocialNetworkInput {
+  """Social network identifier"""
+  identifier: String!
+
+  """Social network service"""
+  service: SocialNetworkService!
+
+  """Social network status"""
+  status: SocialNetworkStatus!
+}
+
+enum SocialNetworkService {
+  FACEBOOK
+  FLICKR
+  INSTAGRAM
+  LINKEDIN
+  OTHER
+  TIKTOK
+  TUMBLR
+  TWITTER
+}
+
+enum SocialNetworkStatus {
+  """Show"""
+  ACTIVE
+
+  """Not show"""
+  HIDDEN
+}
+
+enum SortOrder {
+  ASC
+  DESC
+}
+
+type SpeakerDetails {
+  """Description of a speaker"""
+  description: String!
+
+  """Name of a speaker"""
+  name: String!
+
+  """Speaker's PhotoInfo"""
+  photo: PhotoInfo
+
+  """List of a speaker's social networks"""
+  socialNetworks: [SocialNetwork!]!
+}
+
+input SpeakerDetailsInput {
+  """Description of a speaker"""
+  description: String!
+
+  """Name of a speaker"""
+  name: String!
+
+  """
+  Positive integer representing a numeric identifier for a photo, which must be
+  one associated with this group. When undefined or 0, no photo is set.
+  """
+  photoId: ID
+
+  """List of a speaker's social networks"""
+  socialNetworks: [SpeakerSocialNetworkInputNode!]
+}
+
+input SpeakerSocialNetworkInputNode {
+  """The actual identifier of the social network"""
+  identifier: String!
+
+  """Service of the social network"""
+  service: SocialNetworkService!
+}
+
+"""The sponsor"""
+type Sponsor {
+  """The sponsor description"""
+  description: String!
+
+  """Id of the sponsor"""
+  id: ID!
+
+  """The sponsor logo photo id"""
+  logoId: ID @deprecated(reason: "use `logoPhoto.id` instead")
+
+  """The sponsor logo photo"""
+  logoPhoto: PhotoInfo
+
+  """The sponsor name"""
+  name: String!
+
+  """The sponsor url"""
+  url: String
+}
+
+type SponsorEdge {
+  cursor: String!
+  node: Sponsor!
+}
+
+"""Set of fields to filter sponsors"""
+input SponsorsFilter {
+  type: SponsorType
+}
+
+enum SponsorType {
+  GROUP
+  NETWORK
+}
+
+type Topic {
+  """
+  Description of topic. Supports localization when Accept-Language HTTP header is provided
+  """
+  description: String
+  id: ID!
+
+  """
+  Name of topic. Supports localization when Accept-Language HTTP header is provided
+  """
+  name: String!
+  urlkey: String!
+}
+
+type TopicCategory {
+  color: String!
+
+  """The default topic for the topic category"""
+  defaultTopic: Topic!
+
+  """Unique id for the topic category"""
+  id: ID!
+
+  """A representative image url for the topic category"""
+  imageUrl: String!
+
+  """Name of topic category translated based on requested language"""
+  name: String!
+  topics(after: String, first: Int): TopicsConnection!
+
+  """UrlKey used in urls"""
+  urlkey: String!
+}
+
+type TopicCategoryConnection {
+  edges: [TopicCategoryEdge!]!
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+type TopicCategoryEdge {
+  cursor: String!
+  node: TopicCategory!
+}
+
+type TopicEdge {
+  cursor: String!
+  node: Topic!
+}
+
+type TopicsConnection {
+  edges: [TopicEdge!]!
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+input UpdateGroupDraftInput {
+  """What members of the group will be called. Can be at most 32 characters"""
+  customMembersLabel: String
+
+  """Summary of what the Meetup group is about in simple HTML format"""
+  description: String
+
+  """Group Location"""
+  location: GroupLocation
+
+  """Display name of the group. Can be at most 60 characters"""
+  name: String
+
+  """Group draft token"""
+  token: String!
+
+  """
+  Sets the specified topics to the group overwriting any existing topics. Topics
+  are identified by ids and can be obtained from find topics query
+  """
+  topics: [ID!]
+
+  """
+  Name used for the group's web address on meetup.com. Must be between 6 and 60 characters
+  """
+  urlname: String
+}
+
+type UpdateGroupDraftPayload {
+  errors: [PayloadError!]
+  group: Group
+}
+
+input UpdateGroupMembershipRoleInput {
+  groupId: ID!
+  memberId: ID!
+  role: Role!
+}
+
+type UpdateGroupMembershipRolePayload {
+  errors: [PayloadError!]
+  membership: Membership
+}
+
+type Venue {
+  address: String
+  city: String
+  country: String
+  id: ID!
+  lat: Float
+  lon: Float
+  name: String
+  postalCode: String
+  state: String
+
+  """
+  the type of venue. may be "online" for a virtual venue or empty string at present for in-person events
+  """
+  venueType: String
+}
+
+input VenueOptionInput {
+  """
+  Representing attributes for paid events.
+  Used only for the online venue of the hybrid event.
+  Physical venue part is populated using existing field under event type.
+  """
+  feeOption: EventFeeOption
+
+  """
+  Positive integer representing the number of guests that members
+  may include in their RSVP, 0 inclusive. This defaults to 2.
+  """
+  guestLimit: Int
+
+  """
+  String setting the description for the location of the host(s) at the event venue.
+  For online events this field is used for the event's url.
+  """
+  howToFindUs: String
+
+  """
+  Positive integer representing total number of RSVP slots available for this particular venue.
+  When undefined or defined as 0, there will be no set limit.
+    
+  To remove the RSVP limit from an existing event venue, provide a value of 0.
+  """
+  rsvpLimit: Int
+
+  """Id of the venue which should have the options below."""
+  venueId: String!
+}
+
+"""Waitlist handling when RSVP limit is reached"""
+enum WaitlistMode {
+  """If a spot opens up, the next member in line claims it"""
+  AUTO
+
+  """
+  Waitlists are turned off only in cases where payments are required and there is an rsvp limit
+  """
+  OFF
+}
+
+input WeeklyRecurrence {
+  """List days of the week this event will be hosted on"""
+  weeklyDaysOfWeek: [DayOfWeek!]!
+
+  """Integer number of weeks between each recurrence"""
+  weeklyInterval: Int!
+}
+
+type WeeklyRecurrenceInfo {
+  """List days of the week this event will be hosted on"""
+  weeklyDaysOfWeek: [DayOfWeek!]!
+
+  """Integer number of weeks between each recurrence"""
+  weeklyInterval: Int!
+}
+
