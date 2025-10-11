@@ -53,12 +53,11 @@ impl ScheduleSessionFlow {
         Ok(flow)
     }
 
-    #[tracing::instrument(skip(self, db_connection, redis_connection, meetup_client, swissrpg_client), fields(flow_id = %self.id, event_series_id = %self.event_series_id.0))]
+    #[tracing::instrument(skip(self, db_connection, redis_connection, swissrpg_client), fields(flow_id = %self.id, event_series_id = %self.event_series_id.0))]
     pub async fn schedule<'a>(
         self,
         db_connection: sqlx::PgPool,
         redis_connection: redis::aio::MultiplexedConnection,
-        meetup_client: Option<&'a crate::meetup::newapi::AsyncClient>,
         swissrpg_client: Option<Arc<SwissRPGClient>>,
         date_time: chrono::DateTime<chrono::Utc>,
         is_open_event: bool,
@@ -97,11 +96,6 @@ impl ScheduleSessionFlow {
                 })?;
 
                 if swissrpg_event_series_id.is_none() {
-                    // Need to migrate the Meetup event to SwissRPG first
-                    let meetup_client = meetup_client.ok_or_else(|| {
-                        simple_error::SimpleError::new("Meetup client not available for migration")
-                    })?;
-
                     // Find the latest Meetup event in the series
                     let latest_meetup_event = events.iter().find_map(|event| {
                         if let Some(meetup_event) = &event.meetup_event {
@@ -117,7 +111,6 @@ impl ScheduleSessionFlow {
                     self.migrate_meetup_to_swissrpg_and_schedule(
                         db_connection,
                         redis_connection,
-                        meetup_client,
                         swissrpg_client,
                         latest_event,
                         latest_meetup_event,
@@ -273,7 +266,6 @@ impl ScheduleSessionFlow {
         self,
         db_connection: sqlx::PgPool,
         mut redis_connection: redis::aio::MultiplexedConnection,
-        _meetup_client: &'a crate::meetup::newapi::AsyncClient,
         swissrpg_client: Arc<SwissRPGClient>,
         latest_event: &db::Event,
         latest_meetup_event: &db::MeetupEvent,

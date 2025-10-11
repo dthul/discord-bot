@@ -95,7 +95,10 @@ async fn schedule_session_handler(
     Extension(state): Extension<Arc<State>>,
     Path(flow_id): Path<u64>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_multiplexed_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     eprintln!("Retrieving flow...");
     let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
@@ -151,7 +154,12 @@ async fn schedule_session_handler(
                     .meetup_event
                     .as_ref()
                     .map(|meetup_event| meetup_event.url.as_str())
-                    .or_else(|| event.swissrpg_event.as_ref().map(|swissrpg_event| swissrpg_event.url.as_str())),
+                    .or_else(|| {
+                        event
+                            .swissrpg_event
+                            .as_ref()
+                            .map(|swissrpg_event| swissrpg_event.url.as_str())
+                    }),
             };
             Ok(template.into_response())
         }
@@ -164,7 +172,10 @@ async fn schedule_session_post_handler(
     Path(flow_id): Path<u64>,
     Form(form_data): Form<HashMap<String, String>>,
 ) -> Result<Response, WebError> {
-    let mut redis_connection = state.redis_client.get_multiplexed_async_connection().await?;
+    let mut redis_connection = state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
     let flow = lib::flow::ScheduleSessionFlow::retrieve(&mut redis_connection, flow_id).await?;
     let flow = match flow {
         Some(flow) => flow,
@@ -256,72 +267,59 @@ async fn schedule_session_post_handler(
     };
     // Convert time to UTC
     let date_time = date_time.with_timezone(&chrono::Utc);
-    let meetup_client_guard = state.async_meetup_client.lock().await;
-    let meetup_client = meetup_client_guard.as_deref();
-    
+
     // Capture the event series ID before moving the flow
     let event_series_id = flow.event_series_id;
-    
+
     // Use the new unified scheduling approach
-    let schedule_result = flow.schedule(
-        state.pool.clone(),
-        redis_connection,
-        meetup_client,
-        Some(state.swissrpg_client.clone()),
-        date_time,
-        is_open_game,
-    ).await;
-    
+    let schedule_result = flow
+        .schedule(
+            state.pool.clone(),
+            redis_connection,
+            Some(state.swissrpg_client.clone()),
+            date_time,
+            is_open_game,
+        )
+        .await;
+
     let (new_event_title, new_event_url, is_meetup) = match &schedule_result {
-        Ok(lib::flow::ScheduleSessionResult::Meetup(meetup_event)) => {
-            (meetup_event.title.clone().unwrap_or_else(|| "No title".to_string()), meetup_event.event_url.clone(), true)
-        },
-        Ok(lib::flow::ScheduleSessionResult::SwissRPG(swissrpg_event)) => {
-            (swissrpg_event.title.clone(), swissrpg_event.public_url.clone(), false)
-        },
+        Ok(lib::flow::ScheduleSessionResult::Meetup(meetup_event)) => (
+            meetup_event
+                .title
+                .clone()
+                .unwrap_or_else(|| "No title".to_string()),
+            meetup_event.event_url.clone(),
+            true,
+        ),
+        Ok(lib::flow::ScheduleSessionResult::SwissRPG(swissrpg_event)) => (
+            swissrpg_event.title.clone(),
+            swissrpg_event.public_url.clone(),
+            false,
+        ),
         Err(err) => {
             let template: MessageTemplate = ("Scheduling failed", format!("Error: {}", err)).into();
             return Ok(template.into_response());
         }
     };
-    
-    // Only close RSVPs for Meetup events for now
-    let rsvps_are_closed = if is_meetup {
-        if let Some(meetup_client) = meetup_client {
-            // For Meetup events, we need to extract the event ID from the URL or result
-            // This is a simplified approach - in practice you'd want to get the ID from the result
-            match &schedule_result {
-                Ok(lib::flow::ScheduleSessionResult::Meetup(meetup_event)) => {
-                    if let Err(err) = meetup_client.close_rsvps(meetup_event.id.0.clone()).await {
-                        eprintln!("RSVPs could not be closed: {:#?}", err);
-                        false
-                    } else {
-                        true
-                    }
-                }
-                _ => false,
-            }
-        } else {
-            false
-        }
-    } else {
-        false // SwissRPG events handle their own RSVP state
-    };
 
     // Remove any possibly existing channel snoozes
     {
         let mut tx = state.pool.begin().await?;
-        if let Ok(Some(channel_id)) =
-            lib::get_series_text_channel(event_series_id, &mut tx).await
-        {
-            sqlx::query!(r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#, channel_id.get() as i64).execute(&mut *tx).await.ok();
+        if let Ok(Some(channel_id)) = lib::get_series_text_channel(event_series_id, &mut tx).await {
+            sqlx::query!(
+                r#"UPDATE event_series_text_channel SET snooze_until = NULL WHERE discord_id = $1"#,
+                channel_id.get() as i64
+            )
+            .execute(&mut *tx)
+            .await
+            .ok();
             tx.commit().await.ok();
         }
     }
-    
+
     // Get the latest event to find the Discord channel for announcements
     let latest_event = lib::db::get_last_event_in_series(&state.pool, event_series_id).await?;
-    
+
     if let Some(latest_event) = latest_event {
         // Announce the new session in the Discord channel
         let channel_roles =
@@ -355,7 +353,7 @@ async fn schedule_session_post_handler(
                 err
             );
         }
-        
+
         // If RSVPs were not transferred, announce the new session in the bot alerts channel
         if is_open_game {
             let message = format!(
@@ -377,12 +375,12 @@ async fn schedule_session_post_handler(
             }
         }
     }
-    
+
     let template = ScheduleSessionSuccessTemplate {
         title: &new_event_title,
         link: &new_event_url,
         transferred_all_rsvps: None, // Not implementing RSVP transfer for now
-        closed_rsvps: rsvps_are_closed,
+        closed_rsvps: false,
     };
     Ok(template.into_response())
 }
