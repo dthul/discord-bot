@@ -900,6 +900,51 @@ async fn sync_channel_permissions(
     Ok(())
 }
 
+/// Helper function to assign a role to a user if they don't already have it.
+/// Returns `Ok(true)` if the role was newly assigned, `Ok(false)` if they already had it.
+async fn try_assign_role(
+    discord_api: &super::CacheAndHttp,
+    user_id: UserId,
+    role_id: RoleId,
+    reason: &str,
+) -> Result<bool, ()> {
+    match user_id.to_user(discord_api).await {
+        Ok(user) => match user.has_role(discord_api, GUILD_ID, role_id).await {
+            Ok(has_role) => {
+                if !has_role {
+                    match discord_api
+                        .http()
+                        .add_member_role(GUILD_ID, user_id, role_id, Some(reason))
+                        .await
+                    {
+                        Ok(_) => {
+                            println!("Assigned user {} to role {}", user_id, role_id);
+                            Ok(true)
+                        }
+                        Err(err) => {
+                            eprintln!("Could not assign user {} to role {}: {}", user_id, role_id, err);
+                            Err(())
+                        }
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
+            Err(err) => {
+                eprintln!(
+                    "Could not figure out whether the user {} already has role {}: {}",
+                    user.id, role_id, err
+                );
+                Err(())
+            }
+        },
+        Err(err) => {
+            eprintln!("Could not find the user {}: {}", user_id, err);
+            Err(())
+        }
+    }
+}
+
 async fn sync_role_assignments_permissions(
     discord_user_ids: &[UserId],
     discord_host_ids: &[UserId],
@@ -935,37 +980,15 @@ async fn sync_role_assignments_permissions(
         if ignore_discord_user_ids.contains(&user_id) {
             continue;
         }
-        match user_id.to_user(discord_api).await {
-            Ok(user) => match user.has_role(discord_api, GUILD_ID, user_role).await {
-                Ok(has_role) => {
-                    if !has_role {
-                        match discord_api
-                            .http()
-                            .add_member_role(
-                                GUILD_ID,
-                                user_id,
-                                user_role,
-                                Some("Automatic role assignment due to event participation"),
-                            )
-                            .await
-                        {
-                            Ok(_) => {
-                                println!("Assigned user {} to role {}", user_id, user_role);
-                                newly_added_user_ids.push(user_id);
-                            }
-                            Err(err) => eprintln!(
-                                "Could not assign user {} to role {}: {}",
-                                user_id, user_role, err
-                            ),
-                        }
-                    }
-                }
-                Err(err) => eprintln!(
-                    "Could not figure out whether the user {} already has role {}: {}",
-                    user.id, user_role, err
-                ),
-            },
-            Err(err) => eprintln!("Could not find the user {}: {}", user_id, err),
+        if let Ok(true) = try_assign_role(
+            discord_api,
+            user_id,
+            user_role,
+            "Automatic role assignment due to event participation",
+        )
+        .await
+        {
+            newly_added_user_ids.push(user_id);
         }
     }
     // Assign direct permissions to hosts
@@ -1025,6 +1048,15 @@ async fn sync_role_assignments_permissions(
                 _ => (),
             }
         }
+
+        // Also assign the role to the host
+        let _ = try_assign_role(
+            discord_api,
+            host_id,
+            user_role,
+            "Automatic role assignment due to being a host",
+        )
+        .await;
     }
     // Announce the newly added users
     if !newly_added_host_ids.is_empty() {
