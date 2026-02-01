@@ -213,10 +213,10 @@ async fn schedule_session_post_handler(
         }
     };
     let duration = match form_data.get("duration") {
-        None => 4 * 60,
+        None => chrono::TimeDelta::minutes(4 * 60),
         Some(duration) => match duration.parse::<u16>() {
-            Err(_) => 4 * 60,
-            Ok(duration) => duration.min(12 * 60),
+            Err(_) => chrono::TimeDelta::minutes(4 * 60),
+            Ok(duration) => chrono::TimeDelta::minutes(duration.min(12 * 60) as i64),
         },
     };
     // Try to convert the supplied data to a DateTime
@@ -278,6 +278,7 @@ async fn schedule_session_post_handler(
             redis_connection,
             Some(state.swissrpg_client.clone()),
             date_time,
+            duration,
             is_open_game,
         )
         .await;

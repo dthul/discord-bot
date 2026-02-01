@@ -144,11 +144,12 @@ impl SwissRPGClient {
             .await?;
 
         if !response.status().is_success() {
-            return Err(SimpleError::new(format!(
-                "API request failed with status: {}",
-                response.status()
-            ))
-            .into());
+            let status = response.status();
+            let text = response.text().await;
+            println!("Migrate request failed:\n{} {:#?}", status, text);
+            return Err(
+                SimpleError::new(format!("API request failed with status: {}", status)).into(),
+            );
         }
 
         let event: Event = response.json().await?;

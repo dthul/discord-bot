@@ -60,6 +60,7 @@ impl ScheduleSessionFlow {
         redis_connection: redis::aio::MultiplexedConnection,
         swissrpg_client: Option<Arc<SwissRPGClient>>,
         date_time: chrono::DateTime<chrono::Utc>,
+        duration: chrono::TimeDelta,
         is_open_event: bool,
     ) -> Result<ScheduleSessionResult, crate::BoxedError> {
         let events = db::get_events_for_series(&db_connection, self.event_series_id).await?;
@@ -77,7 +78,7 @@ impl ScheduleSessionFlow {
 
         // Always schedule new sessions on SwissRPG
         // If the previous session was on Meetup and there's no SwissRPG event series ID,
-        // migrate the event to SwissRPG first
+        // migrate the event to SwissRPG
         match latest_event.source() {
             Some(db::EventSource::Meetup) => {
                 // Check if the event series already has a SwissRPG event series ID
@@ -108,13 +109,14 @@ impl ScheduleSessionFlow {
                         simple_error::SimpleError::new("Could not find a Meetup event to migrate")
                     })?;
 
-                    self.migrate_meetup_to_swissrpg_and_schedule(
+                    self.migrate_meetup_to_swissrpg(
                         db_connection,
                         redis_connection,
                         swissrpg_client,
                         latest_event,
                         latest_meetup_event,
                         date_time,
+                        duration,
                         is_open_event,
                     )
                     .await
@@ -127,6 +129,7 @@ impl ScheduleSessionFlow {
                         swissrpg_client,
                         latest_event,
                         date_time,
+                        duration,
                         is_open_event,
                     )
                     .await
@@ -141,6 +144,7 @@ impl ScheduleSessionFlow {
                     swissrpg_client,
                     latest_event,
                     date_time,
+                    duration,
                     is_open_event,
                 )
                 .await
@@ -208,6 +212,7 @@ impl ScheduleSessionFlow {
         swissrpg_client: Arc<SwissRPGClient>,
         latest_event: &db::Event,
         date_time: chrono::DateTime<chrono::Utc>,
+        duration: chrono::TimeDelta,
         _is_open_event: bool,
     ) -> Result<crate::swissrpg::schema::Event, crate::BoxedError> {
         // For SwissRPG, we need to find the SwissRPG event series ID (not the individual session ID)
@@ -241,7 +246,7 @@ impl ScheduleSessionFlow {
         // Create a new session via SwissRPG API using the event series ID
         let schedule_request = crate::swissrpg::schema::ScheduleSessionRequest {
             start: date_time.format("%Y-%m-%d %H:%M").to_string(),
-            duration: 240, // 4 hours default duration
+            duration: duration.num_minutes() as i32,
             include_players: true,
         };
 
@@ -262,7 +267,7 @@ impl ScheduleSessionFlow {
         Ok(updated_event)
     }
 
-    async fn migrate_meetup_to_swissrpg_and_schedule<'a>(
+    async fn migrate_meetup_to_swissrpg<'a>(
         self,
         db_connection: sqlx::PgPool,
         mut redis_connection: redis::aio::MultiplexedConnection,
@@ -270,6 +275,7 @@ impl ScheduleSessionFlow {
         latest_event: &db::Event,
         latest_meetup_event: &db::MeetupEvent,
         date_time: chrono::DateTime<chrono::Utc>,
+        duration: chrono::TimeDelta,
         _is_open_event: bool,
     ) -> Result<crate::swissrpg::schema::Event, crate::BoxedError> {
         tracing::info!(
@@ -302,7 +308,8 @@ impl ScheduleSessionFlow {
         // Prepare migration request
         let migrate_request = crate::swissrpg::schema::MigrateEventRequest {
             title: latest_event.title.clone(),
-            start: latest_event.time.format("%Y-%m-%d %H:%M").to_string(),
+            start: date_time.format("%Y-%m-%d %H:%M").to_string(),
+            end: Some((date_time + duration).format("%Y-%m-%d %H:%M").to_string()),
             organisers: event_hosts
                 .iter()
                 .filter_map(|host| host.discord_id.map(|id| (id as u64).to_string()))
@@ -313,8 +320,9 @@ impl ScheduleSessionFlow {
                 .collect(),
             legacy_id: latest_meetup_event.meetup_id.parse().unwrap_or(0),
             description: Some(latest_event.description.clone()),
-            end: None,
         };
+
+        tracing::info!("Migrating event to SwissRPG:\n{migrate_request:#?}");
 
         // Migrate to SwissRPG
         let migrated_event = swissrpg_client
@@ -333,28 +341,28 @@ impl ScheduleSessionFlow {
             "Successfully migrated Meetup event series to SwissRPG"
         );
 
-        // Now schedule the next session on the migrated SwissRPG event series
-        let schedule_request = crate::swissrpg::schema::ScheduleSessionRequest {
-            start: date_time.format("%Y-%m-%d %H:%M").to_string(),
-            duration: 240, // 4 hours default duration
-            include_players: true,
-        };
+        // // Now schedule the next session on the migrated SwissRPG event series
+        // let schedule_request = crate::swissrpg::schema::ScheduleSessionRequest {
+        //     start: date_time.format("%Y-%m-%d %H:%M").to_string(),
+        //     duration: 240, // 4 hours default duration
+        //     include_players: true,
+        // };
 
-        let updated_event = swissrpg_client
-            .schedule_session(&migrated_event.uuid, schedule_request)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to schedule SwissRPG session for migrated event series {}",
-                    migrated_event.uuid
-                )
-            })?;
+        // let updated_event = swissrpg_client
+        //     .schedule_session(&migrated_event.uuid, schedule_request)
+        //     .await
+        //     .with_context(|| {
+        //         format!(
+        //             "Failed to schedule SwissRPG session for migrated event series {}",
+        //             migrated_event.uuid
+        //         )
+        //     })?;
 
         let redis_key = format!("flow:schedule_session:{}", self.id);
         let _: redis::RedisResult<()> = redis_connection.del(&redis_key).await;
 
         // The SwissRPG sync task will pick up both the migrated event and the new session
-        Ok(updated_event)
+        Ok(migrated_event)
     }
 
     fn increment_session_title(title: &str) -> String {
