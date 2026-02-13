@@ -2,7 +2,7 @@ use command_macro::command;
 
 #[command]
 #[regex(r"snooze\s+(?P<num_days>[0-9]+)\s*d(ay)?s?")]
-#[level(admin)]
+#[level(host)]
 #[help(
     "snooze `X` days",
     "_(in game channel)_ snoozes reminders for _X_ days"
