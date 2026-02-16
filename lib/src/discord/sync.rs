@@ -66,12 +66,21 @@ lazy_static! {
         regex::Regex::new(r"^\s*(?P<name>[^\[\(]+[^\s\[\(])").unwrap();
 }
 
+fn swissrpg_event_series_url(base_url: &str, event_series_id: &uuid::Uuid) -> String {
+    format!(
+        "{}/event/{}",
+        base_url.trim_end_matches('/'),
+        event_series_id
+    )
+}
+
 // Syncs Discord with the state of the database
 pub async fn sync_discord(
     redis_connection: &mut redis::aio::MultiplexedConnection,
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
     bot_id: UserId,
+    swissrpg_base_url: &str,
 ) -> Result<(), crate::meetup::Error> {
     let event_series_ids = sqlx::query!("SELECT id FROM event_series")
         .map(|row| db::EventSeriesId(row.id))
@@ -85,6 +94,7 @@ pub async fn sync_discord(
             db_connection,
             discord_api,
             bot_id,
+            swissrpg_base_url,
         )
         .await
         {
@@ -119,6 +129,7 @@ async fn sync_event_series(
     db_connection: &sqlx::PgPool,
     discord_api: &super::CacheAndHttp,
     bot_id: UserId,
+    swissrpg_base_url: &str,
 ) -> Result<(), crate::meetup::Error> {
     // Only sync event series that have events in the future
     let next_event = match db::get_next_event_in_series(db_connection, series_id).await? {
@@ -147,6 +158,12 @@ async fn sync_event_series(
         .execute(db_connection)
         .await?;
     }
+    let swissrpg_event_series_id = sqlx::query_scalar!(
+        r#"SELECT swissrpg_event_series_id FROM event_series WHERE id = $1"#,
+        series_id.0
+    )
+    .fetch_one(db_connection)
+    .await?;
 
     // Update this series' Discord category to match the next upcoming event's (if any)
     if let Some(discord_category) = next_event.discord_category {
@@ -337,7 +354,14 @@ async fn sync_event_series(
     )
     .await?;
     // Step 6: Keep the channel's topic up-to-date
-    sync_channel_topic(channel_id, &next_event, discord_api).await?;
+    sync_channel_topic(
+        channel_id,
+        &next_event,
+        swissrpg_event_series_id,
+        swissrpg_base_url,
+        discord_api,
+    )
+    .await?;
     sync_channel_category(
         series_id,
         ChannelType::Text,
@@ -922,7 +946,10 @@ async fn try_assign_role(
                             Ok(true)
                         }
                         Err(err) => {
-                            eprintln!("Could not assign user {} to role {}: {}", user_id, role_id, err);
+                            eprintln!(
+                                "Could not assign user {} to role {}: {}",
+                                user_id, role_id, err
+                            );
                             Err(())
                         }
                     }
@@ -1145,18 +1172,28 @@ async fn sync_game_master_role(
 async fn sync_channel_topic(
     channel_id: ChannelId,
     next_event: &db::Event,
+    swissrpg_event_series_id: Option<uuid::Uuid>,
+    swissrpg_base_url: &str,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Sync the topic
-    let topic = match &next_event.meetup_event {
-        Some(meetup_event) => format!("Next session: {}", meetup_event.url),
-        None => format!(
-            "Next Session: {}",
-            next_event
-                .time
-                .with_timezone(&chrono_tz::Europe::Zurich)
-                .format("%d.%m.%Y %H:%M")
-        ),
+    let next_session_time = next_event
+        .time
+        .with_timezone(&chrono_tz::Europe::Zurich)
+        .format("%d.%m.%Y %H:%M")
+        .to_string();
+    let topic = match swissrpg_event_series_id {
+        Some(swissrpg_event_series_id) => {
+            let swissrpg_url = next_event
+                .swissrpg_event
+                .as_ref()
+                .map(|swissrpg_event| swissrpg_event.url.clone())
+                .unwrap_or_else(|| {
+                    swissrpg_event_series_url(swissrpg_base_url, &swissrpg_event_series_id)
+                });
+            format!("Next Session: {} {}", next_session_time, swissrpg_url)
+        }
+        None => format!("Next Session: {}", next_session_time),
     };
     let channel = channel_id.to_channel(discord_api).await?;
     if let serenity::model::channel::Channel::Guild(channel) = channel {
