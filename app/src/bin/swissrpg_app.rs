@@ -16,21 +16,21 @@ use sqlx::{postgres::PgPoolOptions, Executor};
 
 fn init_tracing_and_errors() {
     use tracing_subscriber::prelude::*;
-    
+
     // Install the tracing error layer that captures span traces
     let error_layer = tracing_error::ErrorLayer::default();
-    
+
     // Set up tracing subscriber with environment filter
     // Default to "warn" level if no RUST_LOG is set
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
-    
+
     tracing_subscriber::registry()
         .with(error_layer)
         .with(tracing_subscriber::fmt::layer())
         .with(env_filter)
         .init();
-    
+
     // Install the default eyre handler - tracing-error will automatically integrate
     eyre::set_hook(Box::new(eyre::DefaultHandler::default_with)).expect("Failed to install eyre hook");
 }
@@ -38,7 +38,7 @@ fn init_tracing_and_errors() {
 fn main() {
     // Initialize tracing and error reporting
     init_tracing_and_errors();
-    
+
     let environment = env::var("BOT_ENV").expect("Found no BOT_ENV in environment");
     let is_test_environment = match environment.as_str() {
         "prod" => false,
@@ -133,7 +133,7 @@ fn main() {
 
     // Create SwissRPG API client
     let swissrpg_client = Arc::new(lib::swissrpg::client::SwissRPGClient::new(
-        swissrpg_api_url,
+        swissrpg_api_url.clone(),
         swissrpg_api_secret,
     ));
 
@@ -247,30 +247,31 @@ fn main() {
         );
 
     let static_file_prefix = Box::leak(format!("{}/static/", lib::urls::BASE_URL).into_boxed_str());
-    
+
     // Create shared sync state for coordinating between sync tasks
     let sync_state = lib::tasks::sync::SyncState::default();
-    
+
     // Independent sync tasks
     let meetup_sync_task = lib::tasks::sync::create_recurring_meetup_sync_task(
         pool.clone(),
         async_meetup_client.clone(),
         sync_state.clone(),
     );
-    
+
     let swissrpg_sync_task = lib::tasks::sync::create_recurring_swissrpg_sync_task(
         pool.clone(),
         swissrpg_client.clone(),
         sync_state.clone(),
     );
-    
+
     let discord_sync_task = lib::tasks::sync::create_recurring_discord_sync_task(
         pool.clone(),
         redis_client.clone(),
         discord_api.clone(),
         bot_id,
+        swissrpg_api_url,
     );
-    
+
     let free_spots_task = lib::tasks::sync::create_recurring_free_spots_task(
         sync_state,
         async_meetup_client.clone(),
@@ -293,13 +294,13 @@ fn main() {
     let (end_of_game_task, abort_handle_end_of_game_task) = future::abortable(end_of_game_task);
     let (user_topic_voice_channel_reset_task, abort_handle_user_topic_voice_channel_reset_task) =
         future::abortable(user_topic_voice_channel_reset_task);
-    
+
     // Split sync tasks
     let (meetup_sync_task, abort_handle_meetup_sync_task) = future::abortable(meetup_sync_task);
     let (swissrpg_sync_task, abort_handle_swissrpg_sync_task) = future::abortable(swissrpg_sync_task);
     let (discord_sync_task, abort_handle_discord_sync_task) = future::abortable(discord_sync_task);
     let (free_spots_task, abort_handle_free_spots_task) = future::abortable(free_spots_task);
-    
+
     let (stripe_subscription_refresh_task, abort_handle_stripe_subscription_refresh_task) =
         future::abortable(stripe_subscription_refresh_task);
 
@@ -351,7 +352,7 @@ fn main() {
             let _ = user_topic_voice_channel_reset_task.await;
             println!("User topic voice channel reset task shut down.");
         });
-        
+
         // Split sync tasks
         tokio::spawn(async {
             let _ = meetup_sync_task.await;
@@ -369,7 +370,7 @@ fn main() {
             let _ = free_spots_task.await;
             println!("Free spots task shut down.");
         });
-        
+
         tokio::spawn(async {
             let _ = stripe_subscription_refresh_task.await;
             println!("Stripe subscription refresh task shut down.");
@@ -398,13 +399,13 @@ fn main() {
     // abort_handle_users_token_refresh_task.abort();
     abort_handle_end_of_game_task.abort();
     abort_handle_user_topic_voice_channel_reset_task.abort();
-    
+
     // Abort split sync tasks
     abort_handle_meetup_sync_task.abort();
     abort_handle_swissrpg_sync_task.abort();
     abort_handle_discord_sync_task.abort();
     abort_handle_free_spots_task.abort();
-    
+
     abort_handle_stripe_subscription_refresh_task.abort();
     abort_web_server_tx.send(()).ok();
     println!("About to shut down the tokio runtime.");
