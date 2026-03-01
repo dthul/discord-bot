@@ -1,5 +1,13 @@
 We use sqlx-cli to handle migrations.
 
+# Database connection
+
+Update the `.env` file with the database credentials and forward the database port:
+
+```bash
+ssh -N -L 5432:localhost:5432 root@bot.swissrpg.ch
+```
+
 # Install sqlx CLI
 
 ```bash
@@ -27,7 +35,7 @@ Now edit the newly created `*.up.sql` and `*.down.sql` files in the [migration/]
 Make sure the database connection information in [.env](./.env) is correct (use the `bottest` or `bot` user respectively), then do:
 
 ```bash
-sqlx migrate run
+sqlx migrate run [--dry-run]
 ```
 
 <!-- We use [Tusker](https://github.com/bikeshedder/tusker) to handle database migrations.

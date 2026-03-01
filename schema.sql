@@ -44,7 +44,7 @@ CREATE TABLE event_series (
     discord_host_role_id bigint UNIQUE REFERENCES event_series_host_role (discord_id),
     discord_category_id bigint,
     "type" text NOT NULL REFERENCES event_series_type ("type"),
-    redis_series_id text UNIQUE,
+    redis_series_id text UNIQUE, -- deprecated and unused
     swissrpg_event_series_id uuid UNIQUE
 );
 ALTER SEQUENCE event_series_id_seq OWNED BY event_series.id;
