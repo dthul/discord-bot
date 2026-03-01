@@ -231,7 +231,6 @@ pub async fn create_recurring_syncing_task(
     bot_id: UserId,
     static_file_prefix: &'static str,
 ) -> ! {
-    let swissrpg_base_url = std::env::var("SWISSRPG_API_URL").unwrap_or_default();
     let mut interval_timer = tokio::time::interval_at(
         Instant::now() + Duration::from_secs(15 * 60),
         Duration::from_secs(15 * 60),
@@ -244,7 +243,6 @@ pub async fn create_recurring_syncing_task(
         let redis_client = redis_client.clone();
         let discord_api = discord_api.clone();
         let swissrpg_client = swissrpg_client.clone();
-        let swissrpg_base_url = swissrpg_base_url.clone();
         let meetup_client = meetup_client.clone();
         tokio::spawn(async move {
             let mut redis_connection = redis_client.get_multiplexed_async_connection().await?;
@@ -295,7 +293,7 @@ pub async fn create_recurring_syncing_task(
                 &db_connection,
                 &discord_api,
                 bot_id,
-                &swissrpg_base_url,
+                swissrpg_client.base_url(),
             )
             .await
             {

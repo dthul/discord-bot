@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use futures_util::lock::Mutex as AsyncMutex;
-use lib::strings;
+use lib::{strings, swissrpg::client::SwissRPGClient};
 use serenity::{
     all::{ApplicationId, GuildMemberUpdateEvent},
     async_trait,
@@ -30,6 +30,7 @@ pub async fn create_discord_client(
     async_meetup_client: Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>,
     oauth2_consumer: Arc<lib::meetup::oauth2::OAuth2Consumer>,
     stripe_client: Arc<stripe::Client>,
+    swissrpg_client: Arc<SwissRPGClient>,
     shutdown_signal: Arc<AtomicBool>,
 ) -> Result<Client, lib::meetup::Error> {
     // Create a new instance of the Client, logging in as a bot. This will
@@ -72,6 +73,7 @@ pub async fn create_discord_client(
         data.insert::<PoolKey>(pool);
         data.insert::<OAuth2ConsumerKey>(oauth2_consumer);
         data.insert::<StripeClientKey>(stripe_client);
+        data.insert::<SwissRPGClientKey>(swissrpg_client);
         data.insert::<ShutdownSignalKey>(shutdown_signal);
         data.insert::<PreparedCommandsKey>(prepared_commands);
     }
@@ -107,6 +109,11 @@ impl TypeMapKey for OAuth2ConsumerKey {
 pub struct StripeClientKey;
 impl TypeMapKey for StripeClientKey {
     type Value = Arc<stripe::Client>;
+}
+
+pub struct SwissRPGClientKey;
+impl TypeMapKey for SwissRPGClientKey {
+    type Value = Arc<SwissRPGClient>;
 }
 
 pub struct ShutdownSignalKey;

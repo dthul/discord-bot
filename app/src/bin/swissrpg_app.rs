@@ -32,7 +32,8 @@ fn init_tracing_and_errors() {
         .init();
 
     // Install the default eyre handler - tracing-error will automatically integrate
-    eyre::set_hook(Box::new(eyre::DefaultHandler::default_with)).expect("Failed to install eyre hook");
+    eyre::set_hook(Box::new(eyre::DefaultHandler::default_with))
+        .expect("Failed to install eyre hook");
 }
 
 fn main() {
@@ -162,6 +163,7 @@ fn main() {
             async_meetup_client.clone(),
             meetup_oauth2_consumer.clone(),
             stripe_client.clone(),
+            swissrpg_client.clone(),
             bot_shutdown_signal.clone(),
         ))
         .expect("Could not create the Discord bot");
@@ -297,7 +299,8 @@ fn main() {
 
     // Split sync tasks
     let (meetup_sync_task, abort_handle_meetup_sync_task) = future::abortable(meetup_sync_task);
-    let (swissrpg_sync_task, abort_handle_swissrpg_sync_task) = future::abortable(swissrpg_sync_task);
+    let (swissrpg_sync_task, abort_handle_swissrpg_sync_task) =
+        future::abortable(swissrpg_sync_task);
     let (discord_sync_task, abort_handle_discord_sync_task) = future::abortable(discord_sync_task);
     let (free_spots_task, abort_handle_free_spots_task) = future::abortable(free_spots_task);
 

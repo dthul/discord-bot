@@ -1,6 +1,7 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use futures_util::lock::Mutex as AsyncMutex;
+use lib::swissrpg::client::SwissRPGClient;
 use once_cell::sync::OnceCell;
 use regex::{Regex, RegexSet};
 use serenity::{
@@ -115,6 +116,7 @@ pub struct CommandContext {
     meetup_client: OnceCell<Arc<AsyncMutex<Option<Arc<lib::meetup::newapi::AsyncClient>>>>>,
     oauth2_consumer: OnceCell<Arc<lib::meetup::oauth2::OAuth2Consumer>>,
     stripe_client: OnceCell<Arc<stripe::Client>>,
+    swissrpg_client: OnceCell<Arc<SwissRPGClient>>,
     bot_id: OnceCell<UserId>,
     channel: OnceCell<Channel>,
     pool: OnceCell<sqlx::PgPool>,
@@ -130,6 +132,7 @@ impl CommandContext {
             meetup_client: OnceCell::new(),
             oauth2_consumer: OnceCell::new(),
             stripe_client: OnceCell::new(),
+            swissrpg_client: OnceCell::new(),
             bot_id: OnceCell::new(),
             channel: OnceCell::new(),
             pool: OnceCell::new(),
@@ -243,6 +246,27 @@ impl CommandContext {
             self.stripe_client.set(client).ok();
             Ok(self
                 .stripe_client
+                .get()
+                .map(Arc::clone)
+                .expect("Stripe client not set. This is a bug."))
+        }
+    }
+
+    pub async fn swissrpg_client(&self) -> Result<Arc<SwissRPGClient>, lib::meetup::Error> {
+        if let Some(client) = self.swissrpg_client.get() {
+            Ok(Arc::clone(client))
+        } else {
+            let client = self
+                .ctx
+                .data
+                .read()
+                .await
+                .get::<super::bot::SwissRPGClientKey>()
+                .cloned()
+                .ok_or_else(|| simple_error::SimpleError::new("SwissRPG client was not set"))?;
+            self.swissrpg_client.set(client).ok();
+            Ok(self
+                .swissrpg_client
                 .get()
                 .map(Arc::clone)
                 .expect("Stripe client not set. This is a bug."))

@@ -16,7 +16,7 @@ fn sync_discord<'a>(
     let pool = context.pool().await?;
     let mut discord_api = (&context.ctx).into();
     let bot_id = context.bot_id().await?;
-    let swissrpg_base_url = std::env::var("SWISSRPG_API_URL").unwrap_or_default();
+    let swissrpg_client = context.swissrpg_client().await?;
     // Spawn the syncing task
     tokio::spawn(async move {
         lib::discord::sync::sync_discord(
@@ -24,7 +24,7 @@ fn sync_discord<'a>(
             &pool,
             &mut discord_api,
             bot_id,
-            &swissrpg_base_url,
+            swissrpg_client.base_url(),
         )
         .await
     });
