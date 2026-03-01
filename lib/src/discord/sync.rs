@@ -59,19 +59,11 @@ pub mod ids {
 
 use ids::*;
 
-use crate::db;
+use crate::{db, swissrpg::swissrpg_event_series_url};
 
 lazy_static! {
     static ref EVENT_NAME_REGEX: regex::Regex =
         regex::Regex::new(r"^\s*(?P<name>[^\[\(]+[^\s\[\(])").unwrap();
-}
-
-fn swissrpg_event_series_url(base_url: &str, event_series_id: &uuid::Uuid) -> String {
-    format!(
-        "{}/event/{}",
-        base_url.trim_end_matches('/'),
-        event_series_id
-    )
 }
 
 // Syncs Discord with the state of the database
