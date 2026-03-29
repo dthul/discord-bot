@@ -1,32 +1,32 @@
 query UpcomingEventsQuery($urlname: String!, $first: Int!, $after: String) {
   groupByUrlname(urlname: $urlname) {
-    upcomingEvents(input: {first: $first, after: $after}) {
+    events(input: {first: $first, after: $after}) {
       pageInfo {
         hasNextPage
         endCursor
       }
-      count
+      totalCount
       edges {
         node {
           id
           title
           eventUrl
-          shortUrl
           description
-          hosts {
-            id
+          eventHosts {
+            member {
+              id
+            }
           }
           dateTime
           maxTickets
-          going
-          isOnline
           rsvpSettings {
             rsvpsClosed
           }
-          venue {
+          venues {
             lat
-            lng
+            lon
             city
+            venueType
           }
           group {
             urlname
@@ -39,15 +39,15 @@ query UpcomingEventsQuery($urlname: String!, $first: Int!, $after: String) {
 
 query EventTicketsQuery($id: ID!, $first: Int!, $after: String) {
   event(id: $id) {
-    tickets(input: {first: $first, after: $after}) {
+    rsvps(input: {first: $first, after: $after}) {
       pageInfo {
         hasNextPage
         endCursor
       }
-      count
+      totalCount
       edges {
         node {
-          user {
+          member {
             id
           }
         }
@@ -72,39 +72,36 @@ query EventQuery($id: ID!) {
     id
     title
     eventUrl
-    shortUrl
     description
-    hosts {
-      id
+    eventHosts {
+      member {
+        id
+      }
     }
     howToFindUs
     dateTime
     maxTickets
-    going
-    isOnline
     rsvpSettings {
       rsvpsClosed
     }
-    venue {
+    venues {
       id
       lat
-      lng
+      lon
       city
+      venueType
     }
     group {
       urlname
     }
     numberOfAllowedGuests
-    image {
-      id
-    }
   }
 }
 
 query GroupMembershipQuery($urlname: String!) {
   groupByUrlname(urlname: $urlname) {
     isMember
-    isOrganizer
+    isPrimaryOrganizer
     membershipMetadata {
       status
       role
@@ -118,22 +115,22 @@ mutation CreateEventMutation($input: CreateEventInput!) {
       id
       title
       eventUrl
-      shortUrl
       description
-      hosts {
-        id
+      eventHosts {
+        member {
+          id
+        }
       }
       dateTime
       maxTickets
-      going
-      isOnline
       rsvpSettings {
         rsvpsClosed
       }
-      venue {
+      venues {
         lat
-        lng
+        lon
         city
+        venueType
       }
       group {
         urlname

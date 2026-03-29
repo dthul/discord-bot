@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use simple_error::SimpleError;
 use std::sync::Arc;
 
-use crate::{db, DefaultStr};
+use crate::{db, meetup::newapi::IsOnline, DefaultStr};
 
 pub const NEW_ADVENTURE_PATTERN: &'static str = r"(?i)\\?\[\s*new\s*adventure\s*\\?\]";
 pub const NEW_CAMPAIGN_PATTERN: &'static str = r"(?i)\\?\[\s*new\s*campaign\s*\\?\]";
@@ -95,14 +95,14 @@ pub async fn sync_event(
     event: super::newapi::UpcomingEventDetails,
     db_connection: &sqlx::PgPool,
 ) -> Result<(), super::Error> {
-    let description = event.description.unwrap_or_str("");
-    let title = event.title.unwrap_or_str("No title");
-    let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(description);
-    let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(description);
-    let is_online = event.is_online || ONLINE_REGEX.is_match(description);
-    let event_series_captures = EVENT_SERIES_REGEX.captures(description);
-    let channel_captures = CHANNEL_REGEX.captures(description);
-    let category_captures = CATEGORY_REGEX.captures(description);
+    let description = event.description;
+    let title = event.title;
+    let is_new_adventure = NEW_ADVENTURE_REGEX.is_match(&description);
+    let is_new_campaign = NEW_CAMPAIGN_REGEX.is_match(&description);
+    let is_online = event.is_online() || ONLINE_REGEX.is_match(&description);
+    let event_series_captures = EVENT_SERIES_REGEX.captures(&description);
+    let channel_captures = CHANNEL_REGEX.captures(&description);
+    let category_captures = CATEGORY_REGEX.captures(&description);
     let indicated_channel_id = match channel_captures {
         Some(captures) => match captures.name("channel_id") {
             Some(id) => match id.as_str().parse::<u64>() {
@@ -133,11 +133,7 @@ pub async fn sync_event(
         },
         _ => None,
     };
-    let urlname = if let Some(urlname) = event
-        .group
-        .as_ref()
-        .and_then(|group| group.urlname.as_ref())
-    {
+    let urlname = if let Some(urlname) = event.group.as_ref().map(|group| group.urlname) {
         urlname
     } else {
         eprintln!("Event {} is missing a group urlname", title,);
@@ -178,7 +174,7 @@ pub async fn sync_event(
         INNER JOIN event ON meetup_event.event_id = event.id
         WHERE meetup_event.meetup_id = $1
         FOR UPDATE"#,
-        event.id.0).fetch_optional(&mut *tx).await?;
+        event.id).fetch_optional(&mut *tx).await?;
     let db_meetup_event_id = row.as_ref().map(|row| row.meetup_event_id);
     let db_event_id = row.as_ref().map(|row| row.event_id);
     let existing_series_id = row.as_ref().map(|row| row.event_series_id);
