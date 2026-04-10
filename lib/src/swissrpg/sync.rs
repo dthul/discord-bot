@@ -3,7 +3,12 @@ use std::{num::NonZeroU64, sync::Arc};
 
 use crate::{db, swissrpg::client::SwissRPGClient};
 
-use super::schema::{Event, Session};
+use super::schema::{Event, Session, Tag};
+
+pub(crate) fn event_series_is_online(tags: &[Tag]) -> bool {
+    tags.iter()
+        .any(|tag| tag.tag_type == "location" && tag.code == "online")
+}
 
 #[tracing::instrument(skip(swissrpg_client, db_connection))]
 pub async fn sync_task(
@@ -20,9 +25,10 @@ pub async fn sync_task(
         if let Some(event) = &event_series.current_session {
             if event.start > now {
                 // Add to EventCollector for free spots tracking
-                let common_event = crate::common_event::CommonEventDetails::from((&event_series, event));
+                let common_event =
+                    crate::common_event::CommonEventDetails::from((&event_series, event));
                 event_collector.add_event(common_event);
-                
+
                 match sync_event(&event_series, event, db_connection).await {
                     Err(err) => eprintln!("Event sync failed: {}", err),
                     _ => (),
@@ -34,9 +40,10 @@ pub async fn sync_task(
         for event in &event_series.upcoming_sessions {
             if event.start > now {
                 // Add to EventCollector for free spots tracking
-                let common_event = crate::common_event::CommonEventDetails::from((&event_series, event));
+                let common_event =
+                    crate::common_event::CommonEventDetails::from((&event_series, event));
                 event_collector.add_event(common_event);
-                
+
                 match sync_event(&event_series, event, db_connection).await {
                     Err(err) => eprintln!("Event sync failed: {}", err),
                     _ => (),
@@ -96,11 +103,14 @@ async fn sync_event_series(
             .fetch_one(&mut **tx)
             .await?;
 
-            if existing_swissrpg_id.is_some() && existing_swissrpg_id.as_ref() != Some(&event_series.uuid) {
+            if existing_swissrpg_id.is_some()
+                && existing_swissrpg_id.as_ref() != Some(&event_series.uuid)
+            {
                 return Err(simple_error::SimpleError::new(format!(
                     "Event series {} already has SwissRPG ID {:?}, cannot associate with {}",
                     indicated_event_series_id, existing_swissrpg_id, event_series.uuid
-                )).into());
+                ))
+                .into());
             }
 
             if existing_swissrpg_id.is_none() {
@@ -112,7 +122,7 @@ async fn sync_event_series(
                 )
                 .execute(&mut **tx)
                 .await?;
-                
+
                 println!(
                     "Event syncing task: Associated SwissRPG event series ID {} with existing event series {}",
                     event_series.uuid, indicated_event_series_id
@@ -152,6 +162,7 @@ pub async fn sync_event(
     db_connection: &sqlx::PgPool,
 ) -> Result<(), crate::BoxedError> {
     let mut tx = db_connection.begin().await?;
+    let is_online = event_series_is_online(&event_series.tags);
 
     // Step 1: Sync the event series first
     let series_id = sync_event_series(event_series, &mut tx).await?;
@@ -186,7 +197,7 @@ pub async fn sync_event(
             event.start,
             event_series.title,
             event_series.description,
-            false, // TODO: is_online
+            is_online,
             None as Option<i64>, // TODO: category_id
             db_event_id
         ).fetch_one(&mut *tx).await?
@@ -200,7 +211,7 @@ pub async fn sync_event(
             event.start,
             event_series.title,
             event_series.description,
-            false, // TODO: is_online
+            is_online,
             None as Option<i64>, // TODO: category_id
         ).fetch_one(&mut *tx).await?
     };
@@ -287,4 +298,32 @@ pub async fn sync_event(
         event.start.format("%Y-%m-%d %H:%M")
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::swissrpg::schema::Tag;
+
+    #[test]
+    fn detects_online_swissrpg_events_from_location_tag() {
+        let tags = vec![Tag {
+            code: "online".to_string(),
+            value: "Online".to_string(),
+            tag_type: "location".to_string(),
+        }];
+
+        assert!(event_series_is_online(&tags));
+    }
+
+    #[test]
+    fn ignores_non_location_online_like_tags() {
+        let tags = vec![Tag {
+            code: "online".to_string(),
+            value: "Online".to_string(),
+            tag_type: "game_type".to_string(),
+        }];
+
+        assert!(!event_series_is_online(&tags));
+    }
 }

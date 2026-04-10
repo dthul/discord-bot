@@ -143,11 +143,7 @@ impl
             });
 
         // Check if event is online based on location tag
-        let is_online = event_series
-            .tags
-            .iter()
-            .any(|tag| tag.tag_type == "location" && tag.code == "online")
-            || venue.is_none();
+        let is_online = crate::swissrpg::sync::event_series_is_online(&event_series.tags);
 
         CommonEventDetails {
             id: session.uuid.to_string(),
@@ -160,5 +156,44 @@ impl
             rsvps_closed: !session.rsvp_open,
             short_url: event_series.public_url.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::swissrpg::schema::{Event, Session, Tag, User};
+    use uuid::Uuid;
+
+    #[test]
+    fn swissrpg_event_without_venue_is_not_online_without_online_tag() {
+        let event = Event {
+            uuid: Uuid::new_v4(),
+            title: "Test".to_string(),
+            public_url: "https://example.com".to_string(),
+            organisers: vec![],
+            description: None,
+            current_session: None,
+            upcoming_sessions: vec![],
+            legacy_id: None,
+            tags: vec![Tag {
+                code: "mystery".to_string(),
+                value: "Mystery".to_string(),
+                tag_type: "location".to_string(),
+            }],
+        };
+        let session = Session {
+            uuid: Uuid::new_v4(),
+            number: 1,
+            start: Utc::now(),
+            attendees: Vec::<User>::new(),
+            rsvp_open: true,
+            open_seats: 1,
+        };
+
+        let common_event = CommonEventDetails::from((&event, &session));
+
+        assert!(!common_event.is_online);
+        assert!(common_event.venue.is_some());
     }
 }

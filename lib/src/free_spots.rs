@@ -322,14 +322,12 @@ impl EventCollector {
     fn event_location(event: &CommonEventDetails) -> Option<Location> {
         let venue = match &event.venue {
             Some(venue) => venue,
-            None => {
-                // Event doesn't have a venue? Assume that it's online
-                return Some(Location::Online);
-            }
+            None => return None,
         };
         // Is this event online?
         if event.is_online
-            || crate::meetup::sync::ONLINE_REGEX.is_match(event.description.as_deref().unwrap_or(""))
+            || crate::meetup::sync::ONLINE_REGEX
+                .is_match(event.description.as_deref().unwrap_or(""))
         {
             return Some(Location::Online);
         }
@@ -344,5 +342,28 @@ impl EventCollector {
         let point = Point::new(venue.lng, venue.lat);
         let location = Location::closest(point);
         Some(location)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn event_without_venue_is_not_classified_as_online_by_default() {
+        let event = CommonEventDetails {
+            id: "1".to_string(),
+            title: "Test".to_string(),
+            description: None,
+            date_time: Utc::now(),
+            venue: None,
+            is_online: false,
+            num_free_spots: 1,
+            rsvps_closed: false,
+            short_url: "https://example.com".to_string(),
+        };
+
+        assert_eq!(EventCollector::event_location(&event), None);
     }
 }
