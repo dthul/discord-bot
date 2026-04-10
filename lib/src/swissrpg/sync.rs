@@ -3,12 +3,7 @@ use std::{num::NonZeroU64, sync::Arc};
 
 use crate::{db, swissrpg::client::SwissRPGClient};
 
-use super::schema::{Event, Session, Tag};
-
-pub(crate) fn event_series_is_online(tags: &[Tag]) -> bool {
-    tags.iter()
-        .any(|tag| tag.tag_type == "location" && tag.code == "online")
-}
+use super::schema::{event_series_is_online, Event, Session};
 
 #[tracing::instrument(skip(swissrpg_client, db_connection))]
 pub async fn sync_task(
@@ -298,32 +293,4 @@ pub async fn sync_event(
         event.start.format("%Y-%m-%d %H:%M")
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::swissrpg::schema::Tag;
-
-    #[test]
-    fn detects_online_swissrpg_events_from_location_tag() {
-        let tags = vec![Tag {
-            code: "online".to_string(),
-            value: "Online".to_string(),
-            tag_type: "location".to_string(),
-        }];
-
-        assert!(event_series_is_online(&tags));
-    }
-
-    #[test]
-    fn ignores_non_location_online_like_tags() {
-        let tags = vec![Tag {
-            code: "online".to_string(),
-            value: "Online".to_string(),
-            tag_type: "game_type".to_string(),
-        }];
-
-        assert!(!event_series_is_online(&tags));
-    }
 }

@@ -320,10 +320,6 @@ impl EventCollector {
 
     // Figure out which location (if any) an event belongs to
     fn event_location(event: &CommonEventDetails) -> Option<Location> {
-        let venue = match &event.venue {
-            Some(venue) => venue,
-            None => return None,
-        };
         // Is this event online?
         if event.is_online
             || crate::meetup::sync::ONLINE_REGEX
@@ -331,6 +327,10 @@ impl EventCollector {
         {
             return Some(Location::Online);
         }
+        let venue = match &event.venue {
+            Some(venue) => venue,
+            None => return None,
+        };
         // Doesn't seem to be an online event.
         // Check if we know the city by name
         if let Some(city) = &venue.city {
@@ -349,21 +349,64 @@ impl EventCollector {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use uuid::Uuid;
 
-    #[test]
-    fn event_without_venue_is_not_classified_as_online_by_default() {
-        let event = CommonEventDetails {
+    fn test_event(venue: Option<crate::common_event::CommonVenue>, is_online: bool) -> CommonEventDetails {
+        CommonEventDetails {
             id: "1".to_string(),
             title: "Test".to_string(),
             description: None,
             date_time: Utc::now(),
-            venue: None,
-            is_online: false,
+            venue,
+            is_online,
             num_free_spots: 1,
             rsvps_closed: false,
             short_url: "https://example.com".to_string(),
-        };
+        }
+    }
+
+    #[test]
+    fn event_without_venue_is_not_classified_as_online_by_default() {
+        let event = test_event(None, false);
 
         assert_eq!(EventCollector::event_location(&event), None);
+    }
+
+    #[test]
+    fn event_without_venue_but_marked_online_is_classified_as_online() {
+        let event = test_event(None, true);
+
+        assert_eq!(EventCollector::event_location(&event), Some(Location::Online));
+    }
+
+    #[test]
+    fn swissrpg_online_event_flows_through_to_online_free_spots_location() {
+        let event_series = crate::swissrpg::schema::Event {
+            uuid: Uuid::new_v4(),
+            title: "Test".to_string(),
+            public_url: "https://example.com".to_string(),
+            organisers: vec![],
+            description: None,
+            current_session: None,
+            upcoming_sessions: vec![],
+            legacy_id: None,
+            tags: vec![crate::swissrpg::schema::Tag {
+                code: crate::swissrpg::schema::LOCATION_CODE_ONLINE.to_string(),
+                value: "Online".to_string(),
+                tag_type: crate::swissrpg::schema::TAG_TYPE_LOCATION.to_string(),
+            }],
+        };
+        let session = crate::swissrpg::schema::Session {
+            uuid: Uuid::new_v4(),
+            number: 1,
+            start: Utc::now(),
+            attendees: vec![],
+            rsvp_open: true,
+            open_seats: 1,
+        };
+
+        let event = CommonEventDetails::from((&event_series, &session));
+
+        assert_eq!(EventCollector::event_location(&event), Some(Location::Online));
     }
 }
