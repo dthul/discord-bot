@@ -17,6 +17,14 @@ pub struct Tag {
     pub tag_type: String,
 }
 
+pub(crate) const TAG_TYPE_LOCATION: &str = "location";
+pub(crate) const LOCATION_CODE_ONLINE: &str = "online";
+
+pub(crate) fn event_series_is_online(tags: &[Tag]) -> bool {
+    tags.iter()
+        .any(|tag| tag.tag_type == TAG_TYPE_LOCATION && tag.code == LOCATION_CODE_ONLINE)
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Session {
     pub uuid: Uuid,
@@ -83,4 +91,31 @@ pub struct ApiResponse<T> {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LocationsResponse {
     pub locations: Vec<Location>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_online_swissrpg_events_from_location_tag() {
+        let tags = vec![Tag {
+            code: LOCATION_CODE_ONLINE.to_string(),
+            value: "Online".to_string(),
+            tag_type: TAG_TYPE_LOCATION.to_string(),
+        }];
+
+        assert!(event_series_is_online(&tags));
+    }
+
+    #[test]
+    fn ignores_non_location_online_like_tags() {
+        let tags = vec![Tag {
+            code: LOCATION_CODE_ONLINE.to_string(),
+            value: "Online".to_string(),
+            tag_type: "game_type".to_string(),
+        }];
+
+        assert!(!event_series_is_online(&tags));
+    }
 }
