@@ -16,10 +16,17 @@ fn sync_discord<'a>(
     let pool = context.pool().await?;
     let mut discord_api = (&context.ctx).into();
     let bot_id = context.bot_id().await?;
+    let swissrpg_client = context.swissrpg_client().await?;
     // Spawn the syncing task
     tokio::spawn(async move {
-        lib::discord::sync::sync_discord(&mut redis_connection, &pool, &mut discord_api, bot_id)
-            .await
+        lib::discord::sync::sync_discord(
+            &mut redis_connection,
+            &pool,
+            &mut discord_api,
+            bot_id,
+            swissrpg_client.base_url(),
+        )
+        .await
     });
     context
         .msg

@@ -20,6 +20,10 @@ impl SwissRPGClient {
         }
     }
 
+    pub fn base_url(&self) -> &String {
+        &self.base_url
+    }
+
     pub async fn get_events(&self) -> Result<Vec<Event>, crate::BoxedError> {
         let url = format!("{}/api/events", self.base_url);
         let response = self
