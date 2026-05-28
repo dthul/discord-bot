@@ -275,7 +275,6 @@ async fn sync_event_series(
         channel_id,
         ChannelType::Text,
         channel_role_id,
-        &discord_host_ids,
         bot_id,
         discord_api,
     )
@@ -308,7 +307,6 @@ async fn sync_event_series(
                     voice_channel_id,
                     ChannelType::Voice,
                     channel_role_id,
-                    &discord_host_ids,
                     bot_id,
                     discord_api,
                 )
@@ -808,22 +806,37 @@ async fn sync_channel_impl(
 }
 
 // Makes sure that the Discord channel has the appropriate permission
-// overwrites for the channel's role and host role.
+// overwrites for the channel's role.
 // Specifically does not remove any additional permission overwrites
 // that the channel might have.
 async fn sync_channel_permissions(
     channel_id: ChannelId,
     channel_type: ChannelType,
     role_id: RoleId,
-    discord_host_ids: &[UserId],
     bot_id: UserId,
     discord_api: &super::CacheAndHttp,
 ) -> Result<(), crate::meetup::Error> {
     // Make this channel private.
-    // This is achieved by denying @everyone the VIEW_CHANNEL permission
-    // but allowing the new role the VIEW_CHANNEL permission.
+    // This is achieved by denying @everyone the relevant visibility permission
+    // but allowing the new role the same permission.
     // see: https://support.discordapp.com/hc/en-us/articles/206143877-How-do-I-set-up-a-Role-Exclusive-channel-
-    let permission_overwrites = match channel_type {
+    let permission_overwrites =
+        base_channel_permissions(channel_type, role_id, bot_id, DICE_ROLLER_BOT_ID);
+    for permission_overwrite in permission_overwrites {
+        channel_id
+            .create_permission(discord_api.http(), permission_overwrite)
+            .await?;
+    }
+    Ok(())
+}
+
+fn base_channel_permissions(
+    channel_type: ChannelType,
+    role_id: RoleId,
+    bot_id: UserId,
+    dice_roller_bot_id: Option<RoleId>,
+) -> Vec<PermissionOverwrite> {
+    match channel_type {
         ChannelType::Text => {
             let mut permission_overwrites = vec![
                 PermissionOverwrite {
@@ -849,71 +862,42 @@ async fn sync_channel_permissions(
                     kind: PermissionOverwriteType::Role(ORGANISER_ID),
                 },
             ];
-            if let Some(dice_roller_bot_id) = DICE_ROLLER_BOT_ID {
+            if let Some(dice_roller_bot_id) = dice_roller_bot_id {
                 permission_overwrites.push(PermissionOverwrite {
                     allow: Permissions::VIEW_CHANNEL,
                     deny: Permissions::empty(),
                     kind: PermissionOverwriteType::Role(dice_roller_bot_id),
                 });
             }
-            for &host_id in discord_host_ids {
-                permission_overwrites.push(PermissionOverwrite {
-                    allow: Permissions::VIEW_CHANNEL
-                        | Permissions::MENTION_EVERYONE
-                        | Permissions::MANAGE_MESSAGES,
-                    deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Member(host_id),
-                });
-            }
             permission_overwrites
         }
-        ChannelType::Voice => {
-            let mut permission_overwrites = vec![
-                PermissionOverwrite {
-                    allow: Permissions::empty(),
-                    deny: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
-                    kind: PermissionOverwriteType::Role(GUILD_ID.everyone_role()),
-                },
-                PermissionOverwrite {
-                    allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
-                    deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Member(bot_id),
-                },
-                PermissionOverwrite {
-                    allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
-                    deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Role(role_id),
-                },
-                PermissionOverwrite {
-                    allow: Permissions::VIEW_CHANNEL
-                        | Permissions::CONNECT
-                        | Permissions::MOVE_MEMBERS
-                        | Permissions::MUTE_MEMBERS
-                        | Permissions::DEAFEN_MEMBERS,
-                    deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Role(ORGANISER_ID),
-                },
-            ];
-            for &host_id in discord_host_ids {
-                permission_overwrites.push(PermissionOverwrite {
-                    allow: Permissions::CONNECT
-                        | Permissions::MUTE_MEMBERS
-                        | Permissions::DEAFEN_MEMBERS
-                        | Permissions::MOVE_MEMBERS
-                        | Permissions::PRIORITY_SPEAKER,
-                    deny: Permissions::empty(),
-                    kind: PermissionOverwriteType::Member(host_id),
-                });
-            }
-            permission_overwrites
-        }
-    };
-    for permission_overwrite in permission_overwrites {
-        channel_id
-            .create_permission(discord_api.http(), permission_overwrite)
-            .await?;
+        ChannelType::Voice => vec![
+            PermissionOverwrite {
+                allow: Permissions::empty(),
+                deny: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
+                kind: PermissionOverwriteType::Role(GUILD_ID.everyone_role()),
+            },
+            PermissionOverwrite {
+                allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Member(bot_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(role_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::VIEW_CHANNEL
+                    | Permissions::CONNECT
+                    | Permissions::MOVE_MEMBERS
+                    | Permissions::MUTE_MEMBERS
+                    | Permissions::DEAFEN_MEMBERS,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(ORGANISER_ID),
+            },
+        ],
     }
-    Ok(())
 }
 
 /// Helper function to assign a role to a user if they don't already have it.
@@ -1010,7 +994,9 @@ async fn sync_role_assignments_permissions(
             newly_added_user_ids.push(user_id);
         }
     }
-    // Assign direct permissions to hosts
+    // Assign direct permissions to hosts.
+    // These host-specific overwrites are granted here so a first-time grant
+    // returns `Ok(true)` and triggers the welcome message.
     let mut newly_added_host_ids = vec![];
     for &host_id in discord_host_ids {
         if ignore_discord_host_ids.contains(&host_id) {
@@ -1267,4 +1253,115 @@ async fn sync_channel_category(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base_permissions_only_include_bot_member_overwrite_for_text_channels() {
+        let role_id = RoleId::new(123);
+        let bot_id = UserId::new(456);
+
+        let permissions = base_channel_permissions(
+            ChannelType::Text,
+            role_id,
+            bot_id,
+            DICE_ROLLER_BOT_ID,
+        );
+
+        let member_overwrites: Vec<_> = permissions
+            .iter()
+            .filter(|permission_overwrite| {
+                matches!(permission_overwrite.kind, PermissionOverwriteType::Member(_))
+            })
+            .collect();
+        assert_eq!(member_overwrites.len(), 1);
+        assert_eq!(
+            member_overwrites[0].kind,
+            PermissionOverwriteType::Member(bot_id)
+        );
+        let mut expected_permissions = vec![
+            PermissionOverwrite {
+                allow: Permissions::empty(),
+                deny: Permissions::VIEW_CHANNEL,
+                kind: PermissionOverwriteType::Role(GUILD_ID.everyone_role()),
+            },
+            PermissionOverwrite {
+                allow: Permissions::VIEW_CHANNEL,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Member(bot_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::VIEW_CHANNEL,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(role_id),
+            },
+            PermissionOverwrite {
+                allow: Permissions::VIEW_CHANNEL
+                    | Permissions::MENTION_EVERYONE
+                    | Permissions::MANAGE_MESSAGES,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(ORGANISER_ID),
+            },
+        ];
+        if let Some(dice_roller_bot_id) = DICE_ROLLER_BOT_ID {
+            expected_permissions.push(PermissionOverwrite {
+                allow: Permissions::VIEW_CHANNEL,
+                deny: Permissions::empty(),
+                kind: PermissionOverwriteType::Role(dice_roller_bot_id),
+            });
+        }
+        assert_eq!(permissions, expected_permissions);
+    }
+
+    #[test]
+    fn base_permissions_only_include_bot_member_overwrite_for_voice_channels() {
+        let role_id = RoleId::new(123);
+        let bot_id = UserId::new(456);
+
+        let permissions = base_channel_permissions(ChannelType::Voice, role_id, bot_id, None);
+
+        let member_overwrites: Vec<_> = permissions
+            .iter()
+            .filter(|permission_overwrite| {
+                matches!(permission_overwrite.kind, PermissionOverwriteType::Member(_))
+            })
+            .collect();
+        assert_eq!(member_overwrites.len(), 1);
+        assert_eq!(
+            member_overwrites[0].kind,
+            PermissionOverwriteType::Member(bot_id)
+        );
+        assert_eq!(
+            permissions,
+            vec![
+                PermissionOverwrite {
+                    allow: Permissions::empty(),
+                    deny: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
+                    kind: PermissionOverwriteType::Role(GUILD_ID.everyone_role()),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Member(bot_id),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::VIEW_CHANNEL | Permissions::CONNECT,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(role_id),
+                },
+                PermissionOverwrite {
+                    allow: Permissions::VIEW_CHANNEL
+                        | Permissions::CONNECT
+                        | Permissions::MOVE_MEMBERS
+                        | Permissions::MUTE_MEMBERS
+                        | Permissions::DEAFEN_MEMBERS,
+                    deny: Permissions::empty(),
+                    kind: PermissionOverwriteType::Role(ORGANISER_ID),
+                },
+            ]
+        );
+    }
 }
