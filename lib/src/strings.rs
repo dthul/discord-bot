@@ -57,7 +57,21 @@ Let's get you started. Just type **link meetup** below and we'll take it from th
 // ** End of one-shot **
 
 #[allow(non_snake_case)]
-pub fn END_OF_ADVENTURE_MESSAGE(bot_id: UserId, channel_role_id: Option<RoleId>) -> String {
+pub fn END_OF_ADVENTURE_MESSAGE(
+    bot_id: UserId,
+    channel_role_id: Option<RoleId>,
+    swissrpg_event_series_id: Option<uuid::Uuid>,
+) -> String {
+    let scheduling_message = match swissrpg_event_series_id {
+        Some(id) => format!(
+            "If the adventure is not done, you can schedule a new session by visiting: {}?scheduleSession=1",
+            crate::swissrpg::swissrpg_event_series_url("https://signup.swissrpg.ch", &id)
+        ),
+        None => format!(
+            "If the adventure is not done, you can schedule a new session by typing here:\n***{} schedule session***",
+            bot_id.mention()
+        ),
+    };
     if let Some(channel_role_id) = channel_role_id {
         format!(
             "I hope everyone had fun on this adventure of {channel_role_mention}.
@@ -66,8 +80,7 @@ Can the GM please confirm this by typing here:
 ***{bot_mention} end adventure***
 This will set the channel for closure in the next 24 hours, which should be just enough time to \
              say thanks and goodbye.
-If the adventure is not done, you can schedule a new session by typing here:
-***{bot_mention} schedule session***",
+{scheduling_message}",
             bot_mention = bot_id.mention(),
             channel_role_mention = channel_role_id.mention()
         )
@@ -79,8 +92,7 @@ Can the GM please confirm this by typing here:
 ***{bot_mention} end adventure***
 This will set the channel for closure in the next 24 hours, which should be just enough time to \
              say thanks and goodbye.
-If the adventure is not done, you can schedule a new session by typing here:
-***{bot_mention} schedule session***",
+{scheduling_message}",
             bot_mention = bot_id.mention()
         )
     }
@@ -89,12 +101,25 @@ If the adventure is not done, you can schedule a new session by typing here:
 // ** End of campaign **
 
 #[allow(non_snake_case)]
-pub fn END_OF_CAMPAIGN_MESSAGE(bot_id: UserId, channel_role_id: Option<RoleId>) -> String {
+pub fn END_OF_CAMPAIGN_MESSAGE(
+    bot_id: UserId,
+    channel_role_id: Option<RoleId>,
+    swissrpg_event_series_id: Option<uuid::Uuid>,
+) -> String {
+    let scheduling_message = match swissrpg_event_series_id {
+        Some(id) => format!(
+            "Whenever you are ready, schedule your next session by visiting: {}?scheduleSession=1",
+            crate::swissrpg::swissrpg_event_series_url("https://signup.swissrpg.ch", &id)
+        ),
+        None => format!(
+            "Whenever you are ready, schedule your next session by typing:\n***{} schedule session***",
+            bot_id.mention()
+        ),
+    };
     if let Some(channel_role_id) = channel_role_id {
         format!(
             "I hope everyone had fun at the last session of {channel_role_mention}!
-Whenever you are ready, schedule your next session by typing:
-***{bot_mention} schedule session***
+{scheduling_message}
 
 If your adventure is over, the Game Master can inform me of this by typing here:
 ***{bot_mention} end adventure***
@@ -105,8 +130,7 @@ This will set the channel for closure in the next 24 hours, just enough to say t
     } else {
         format!(
             "I hope everyone @here had fun at the last session!
-Whenever you are ready, schedule your next session by typing:
-***{bot_mention} schedule session***
+{scheduling_message}
 
 If your adventure is over, the Game Master can inform me of this by typing here:
 ***{bot_mention} end adventure***
@@ -119,15 +143,8 @@ This will set the channel for closure in the next 24 hours, just enough to say t
 // ** Meetup linking **
 
 #[allow(non_snake_case)]
-pub fn MEETUP_LINKING_MESSAGE(linking_url: &str) -> String {
-    format!(
-        "Let's get you hooked up :thumbsup:\n\n***Important note:*** If you are on mobile, please \
-         copy and paste the link into your browser rather than clicking it here.\n\nUse this link \
-         to connect your Meetup profile:\n{}\n***This is a private, ephemeral, one-time use link \
-         and meant just for you.***\nDon't share it with anyone or bad things can happen (to you, \
-         I'll be fine).",
-        linking_url
-    )
+pub fn MEETUP_LINKING_MESSAGE(_linking_url: &str) -> String {
+    "We no longer share our events on Meetup. Simply visit https://signup.swissrpg.ch and start rolling dice with us!".to_string()
 }
 
 #[allow(non_snake_case)]
