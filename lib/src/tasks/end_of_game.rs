@@ -299,12 +299,13 @@ async fn send_channel_expiration_reminder(
     }
     if let Some(expiration_time) = expiration_time {
         // Check if this is a one-shot or a campaign series
-        let is_campaign = sqlx::query_scalar!(
-            r#"SELECT "type" = 'campaign' as "is_campaign!" FROM event_series WHERE discord_text_channel_id = $1"#,
+        let series = sqlx::query!(
+            r#"SELECT "type" = 'campaign' as "is_campaign!", swissrpg_event_series_id FROM event_series WHERE discord_text_channel_id = $1"#,
             channel_id.get() as i64
         )
         .fetch_one(db_connection)
         .await?;
+        let is_campaign = series.is_campaign;
         // We only remind a certain time after expiration
         let reminder_time = if is_campaign {
             expiration_time + chrono::Duration::days(3)
@@ -341,9 +342,9 @@ async fn send_channel_expiration_reminder(
             crate::get_channel_roles(channel_id, &mut db_connection.begin().await?).await?;
         let user_role = channel_roles.map(|roles| roles.user);
         let message_builder = CreateMessage::new().content(if is_campaign {
-            strings::END_OF_CAMPAIGN_MESSAGE(bot_id, user_role)
+            strings::END_OF_CAMPAIGN_MESSAGE(bot_id, user_role, series.swissrpg_event_series_id)
         } else {
-            strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role)
+            strings::END_OF_ADVENTURE_MESSAGE(bot_id, user_role, series.swissrpg_event_series_id)
         });
         channel_id
             .send_message(&discord_api.http, message_builder)

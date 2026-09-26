@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT \"type\" = 'campaign' as \"is_campaign!\", swissrpg_event_series_id FROM event_series WHERE discord_text_channel_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_campaign!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "swissrpg_event_series_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      true
+    ]
+  },
+  "hash": "c334429ca78eb1cf16a719afc51f66cfe9d5984132c02afb17bf16af37a434b0"
+}
